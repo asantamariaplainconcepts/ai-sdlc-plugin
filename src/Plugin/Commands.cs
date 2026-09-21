@@ -1,7 +1,7 @@
 namespace AiSdlc;
 
-/// .harness/commands.json reading, JSONC-safe and byte-bounded: a declared file is
-/// untrusted input — bounded before parsing, never executed by this reader.
+// .harness/commands.json reading, JSONC-safe and byte-bounded: a declared file is untrusted
+// input — bounded before parsing, never executed by its reader. Absent and unreadable differ.
 public static class Commands
 {
     private const int MaxBytes = 256 * 1024;
@@ -24,7 +24,7 @@ public static class Commands
     {
         if (!File.Exists(path))
         {
-            return new ReadResult([], Absent: true, Unreadable: false, Problem: $"not found at {path} — declare gates there with \"gate\": true");
+            return new([], true, false, $"not found at {path} — declare gates there with \"gate\": true");
         }
 
         try
@@ -32,20 +32,18 @@ public static class Commands
             var info = new FileInfo(path);
             if (info.Length > MaxBytes)
             {
-                return new ReadResult([], false, true, $"{path} is {info.Length} bytes, over the {MaxBytes} bound");
+                return new([], false, true, $"{path} is {info.Length} bytes, over the {MaxBytes} bound");
             }
 
-            var json = File.ReadAllText(path);
-            var doc = System.Text.Json.JsonSerializer.Deserialize<Shape>(json, Options);
-            var commands = (doc?.Commands ?? [])
-                .Where(c => !string.IsNullOrWhiteSpace(c.Key) && !string.IsNullOrWhiteSpace(c.Run))
-                .Select(c => new DeclaredCommand(c.Key!, c.Name ?? c.Key!, c.Run!, c.Gate))
-                .ToList();
-            return new ReadResult(commands, false, false, doc?.Commands is null ? "no \"commands\" array" : null);
+            var shape = System.Text.Json.JsonSerializer.Deserialize<Shape>(File.ReadAllText(path), Options);
+            var commands = (shape?.Commands ?? [])
+                .Where(c => !string.IsNullOrWhiteSpace(c?.Key) && !string.IsNullOrWhiteSpace(c?.Run))
+                .Select(c => new DeclaredCommand(c!.Key!, c.Name ?? c.Key!, c.Run!, c.Gate)).ToList();
+            return new(commands, false, false, shape?.Commands is null ? $"no \"commands\" array in {path}" : null);
         }
         catch (Exception e)
         {
-            return new ReadResult([], false, true, $"{path} could not be parsed: {e.Message} — fix the JSON or remove it");
+            return new([], false, true, $"{path} could not be parsed: {e.Message}");
         }
     }
 

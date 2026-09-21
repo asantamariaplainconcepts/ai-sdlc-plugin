@@ -36,11 +36,13 @@ public class GitParseTests
     [Fact]
     public void Numstat_rename_pair()
     {
+        // -z rename shape: the counts, then the old path, then the new one. The row carries the
+        // new name (the file as it is now); the old name is POC-02's diff view, not the header's.
         var git = Git("5\t0\t\0old-name.ts\0new-name.ts\0");
 
         var rows = git.Numstat("/r", "basis");
 
-        rows.Single().ShouldBe(new NumstatRow("new-name.ts", 5, 0, false, "old-name.ts"));
+        rows.Single().ShouldBe(new NumstatRow("new-name.ts", 5, 0, false, null));
     }
 
     [Theory]

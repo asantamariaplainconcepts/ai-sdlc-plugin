@@ -1,145 +1,103 @@
 namespace AiSdlc;
 
-/// The eight header facts, as plain data derived from plain data. Port of harness facts.ts
-/// (837c7ca): tone carries no success color; every absence is its own sentence; null is never zero.
 public static class Facts
 {
-    public enum Tone
-    {
-        Plain,
-        Warn,
-        Bad,
-    }
+    public enum Tone { Plain, Warn, Bad }
 
     public sealed record Fact(string Key, string Text, Tone Tone, string? Title = null);
 
     public sealed record PullRequestAnswer(bool Unreachable, string? Reason, string? Detail, int? Number, string? State, bool? IsDraft, string? Title);
 
-    public sealed record CheckOutcome(int? ExitCode, string? Commit, int? Since);
+    public sealed record CheckOutcome(int? ExitCode, int? Since);
 
-    /// The five checks readings, worst-true-thing-first: undeclared / none-ran / failed / stale / passed (naming the commit).
-    public sealed record ChecksFact(string Key, string Text, Tone Tone, string? Title = null);
+    public sealed record Input(
+        int? Ahead, int? Behind, IReadOnlyList<NumstatRow> Changed, bool DiffPending,
+        IReadOnlyList<string> Conflicts, bool MergeUnknown, int Uncommitted, string? Head,
+        IReadOnlyList<string> Gates, IReadOnlyList<(string Name, CheckOutcome Outcome)> Outcomes,
+        Read<Seam.Row[]> SeamRows, PullRequestAnswer Pr, bool PrPending,
+        string? IssueKey, string? IssueTitle, string? IssueState);
 
-    public static IReadOnlyList<Fact> Header(
-        string? branch,
-        int? ahead,
-        int? behind,
-        IReadOnlyList<NumstatRow> diff,
-        bool diffPending,
-        IReadOnlyList<string> conflicts,
-        bool mergeUnknown,
-        int uncommittedCount,
-        string? head,
-        IReadOnlyList<string> gateCommandNames,
-        IReadOnlyList<(string Name, CheckOutcome Outcome)> outcomes,
-        Read<Seam.Row[]> seamRows,
-        PullRequestAnswer pr,
-        bool prPending,
-        string? issueKey,
-        string? issueTitle,
-        string? issueState)
+    // One sentence per reason a pull request could not be asked about, each with its remedy.
+    private static readonly (string Reason, string Sentence)[] PrUnreachable =
+    [
+        ("NotSignedIn", "gh is not signed in — run gh auth login"),
+        ("CliMissing", "the gh CLI is not installed — install it"),
+        ("NoGitHubRemote", "no GitHub remote — add one or set the issue elsewhere"),
+        ("TimedOut", "asking GitHub timed out — try again"),
+    ];
+
+    /// The eight facts, in the order they are read. Every absence is its own sentence with its
+    /// remedy: null is never zero, "could not ask" is never "there is none", no fact is a tick.
+    public static IReadOnlyList<Fact> Header(Input i)
     {
-        var facts = new List<Fact>();
+        var facts = new List<Fact>
+        {
+            i.IssueKey is null
+                ? new("issue", "no issue resolved — name the branch after it (change/123) or run a task here", Tone.Plain, i.IssueTitle)
+                : new("issue", string.IsNullOrWhiteSpace(i.IssueTitle) ? $"issue {i.IssueKey}" : $"issue {i.IssueKey} {i.IssueTitle}", Tone.Plain, i.IssueState),
+        };
 
-        // Issue context: said, not implied — the header names which issue this is, or that none is resolved.
-        facts.Add(issueKey is null
-            ? new Fact("issue", "no issue resolved — declare one by naming the branch after it (change/123) or running a task here", Tone.Plain, Title: issueTitle)
-            : new Fact("issue", string.IsNullOrWhiteSpace(issueTitle) ? $"issue {issueKey}" : $"issue {issueKey} {issueTitle}", Tone.Plain, Title: issueState));
-
-        // PR: three answers drawn as three (#235).
-        if (prPending)
+        // PR: three answers drawn as three (#235); a draft is open and not asking, so two facts.
+        if (i.PrPending)
         {
-            facts.Add(new Fact("pr", "pull request not read yet", Tone.Plain));
+            facts.Add(new("pr", "pull request not read yet", Tone.Plain));
         }
-        else if (pr.Unreachable)
+        else if (i.Pr.Unreachable)
         {
-            facts.Add(new Fact("pr", "pull request could not be asked", Tone.Plain,
-                Title: $"{PullRequestUnreachable(pr.Reason)} {pr.Detail}".Trim()));
+            var sentence = PrUnreachable.FirstOrDefault(r => r.Reason == i.Pr.Reason).Sentence ?? "GitHub refused the question";
+            facts.Add(new("pr", "pull request could not be asked", Tone.Plain, $"{sentence} {i.Pr.Detail}".Trim()));
         }
-        else if (pr.Number is null)
+        else if (i.Pr.Number is null)
         {
-            facts.Add(new Fact("pr", "no pull request", Tone.Plain));
+            facts.Add(new("pr", "no pull request", Tone.Plain));
         }
         else
         {
-            facts.Add(new Fact("pr", $"pull request #{pr.Number}", Tone.Plain, Title: pr.Title));
-            facts.Add(new Fact("pr-state", pr.IsDraft == true ? "draft" : (pr.State ?? "open").ToLowerInvariant(), Tone.Plain));
+            facts.Add(new("pr", $"pull request #{i.Pr.Number}", Tone.Plain, i.Pr.Title));
+            facts.Add(new("pr-state", i.Pr.IsDraft == true ? "draft" : (i.Pr.State ?? "open").ToLowerInvariant(), Tone.Plain));
         }
 
-        // Changed: null is "diff still being read", never zero.
-        if (diffPending)
+        facts.Add(i.DiffPending
+            ? new("changed", "diff not read yet", Tone.Plain)
+            : new("changed", $"{i.Changed.Count} files +{i.Changed.Sum(d => d.Added)} -{i.Changed.Sum(d => d.Removed)}", Tone.Plain));
+
+        facts.Add(i.Ahead is null || i.Behind is null
+            ? new("base", "no trunk to compare against — fetch the default branch", Tone.Plain)
+            : new("base", $"{i.Ahead} ahead, {i.Behind} behind", i.Behind == 0 ? Tone.Plain : Tone.Warn));
+
+        facts.Add(i.MergeUnknown
+            ? new("merge", "merge not asked — no trunk to merge into", Tone.Plain)
+            : i.Conflicts.Count == 0
+                ? new("merge", "no conflicts", Tone.Plain)
+                : new("merge", $"{i.Conflicts.Count} conflicting", Tone.Bad, string.Join(", ", i.Conflicts)));
+
+        facts.Add(Checks(i.Gates, i.Outcomes, i.Head));
+
+        // Seam: three readings that stay three (#283) — a cut body is not an undeclared seam.
+        if (i.SeamRows.IsUnreadable)
         {
-            facts.Add(new Fact("changed", "diff not read yet", Tone.Plain));
+            facts.Add(new("seam", "seam not compared — the issue body was cut", Tone.Plain));
+        }
+        else if (!i.SeamRows.IsPresent)
+        {
+            facts.Add(new("seam", "seam not compared — no task or no declaration", Tone.Plain));
         }
         else
         {
-            var files = diff.Count;
-            var added = diff.Sum(d => d.Added);
-            var removed = diff.Sum(d => d.Removed);
-            facts.Add(new Fact("changed", $"{files} files +{added} -{removed}", Tone.Plain));
-        }
-
-        // Base: null is its own answer (#146).
-        facts.Add(ahead is null || behind is null
-            ? new Fact("base", "no trunk to compare against", Tone.Plain)
-            : new Fact("base", $"{ahead} ahead, {behind} behind", behind == 0 ? Tone.Plain : Tone.Warn));
-
-        // Merge.
-        if (mergeUnknown)
-        {
-            facts.Add(new Fact("merge", "merge not asked", Tone.Plain));
-        }
-        else if (conflicts.Count == 0)
-        {
-            facts.Add(new Fact("merge", "no conflicts", Tone.Plain));
-        }
-        else
-        {
-            facts.Add(new Fact("merge", $"{conflicts.Count} conflicting", Tone.Bad, Title: string.Join(", ", conflicts)));
-        }
-
-        // Checks: success avoided; the worst thing true of the set is the sentence.
-        var checks = Checks(gateCommandNames, outcomes, head);
-        facts.Add(new Fact(checks.Key, checks.Text, checks.Tone, checks.Title));
-
-        // Seam: three readings that stay three (#283).
-        if (seamRows.IsUnreadable)
-        {
-            facts.Add(new Fact("seam", "seam not compared — the issue body was cut", Tone.Plain));
-        }
-        else if (!seamRows.IsPresent)
-        {
-            facts.Add(new Fact("seam", "seam not compared — no task or no declaration", Tone.Plain));
-        }
-        else
-        {
-            var rows = seamRows.Value!;
-            var outside = rows.Where(r => r.State == Seam.State.Undeclared).ToList();
+            var outside = i.SeamRows.Value!.Where(r => r.State == Seam.State.Undeclared).ToList();
             facts.Add(outside.Count == 0
-                ? new Fact("seam", $"seam all inside — {rows.Length} declared, all touched", Tone.Plain)
-                : new Fact("seam", $"{outside.Count} outside the seam", Tone.Warn, Title: string.Join(", ", outside.Select(r => r.Path))));
+                ? new("seam", "seam all inside", Tone.Plain, $"{i.SeamRows.Value!.Length} declared, all touched")
+                : new("seam", $"{outside.Count} outside the seam", Tone.Warn, string.Join(", ", outside.Select(r => r.Path))));
         }
 
-        // Tree: the probe's own sentence ("2 uncommitted"), amber not red.
-        facts.Add(new Fact("tree", uncommittedCount == 0 ? "tree clean" : $"{uncommittedCount} uncommitted", uncommittedCount == 0 ? Tone.Plain : Tone.Warn));
-
+        facts.Add(new("tree", i.Uncommitted == 0 ? "tree clean" : $"{i.Uncommitted} uncommitted", i.Uncommitted == 0 ? Tone.Plain : Tone.Warn));
         return facts;
     }
 
-    /// One sentence per reason a pull request could not be asked about, with its remedy.
-    private static string PullRequestUnreachable(string? reason) => reason switch
+    /// The five checks readings; the worst thing true of the set is the sentence (#147).
+    private static Fact Checks(IReadOnlyList<string> gates, IReadOnlyList<(string Name, CheckOutcome Outcome)> outcomes, string? head)
     {
-        "NotSignedIn" => "gh is not signed in — run gh auth login",
-        "CliMissing" => "the gh CLI is not installed — install it",
-        "NoGitHubRemote" => "no GitHub remote — add one or set the issue elsewhere",
-        "NotAskable" => "no GitHub remote — add one or set the issue elsewhere",
-        "TimedOut" => "asking GitHub timed out — try again",
-        _ => "GitHub refused the question",
-    };
-
-    private static ChecksFact Checks(IReadOnlyList<string> declared, IReadOnlyList<(string Name, CheckOutcome Outcome)> outcomes, string? head)
-    {
-        if (declared.Count == 0)
+        if (gates.Count == 0)
         {
             return new("checks", "no checks declared — declare one in .harness/commands.json with \"gate\": true", Tone.Plain);
         }
@@ -153,17 +111,15 @@ public static class Facts
         var failed = ran.Where(o => o.Outcome.ExitCode != 0).ToList();
         if (failed.Count > 0)
         {
-            return new("checks", $"{failed.Count} checks failing", Tone.Bad, Title: string.Join(", ", failed.Select(o => o.Name)));
+            return new("checks", $"{failed.Count} checks failing", Tone.Bad, string.Join(", ", failed.Select(o => o.Name)));
         }
 
-        var stale = ran.Where(o => o.Outcome.Since is null || o.Outcome.Since > 0).ToList();
-        if (stale.Count > 0)
+        // Stale: an outcome whose commit the directory has moved past, or is no longer comparable.
+        if (ran.Any(o => o.Outcome.Since is null || o.Outcome.Since > 0))
         {
             return new("checks", "checks ran on an older commit", Tone.Warn);
         }
 
-        return head is null
-            ? new("checks", $"{ran.Count} checks passed here", Tone.Plain)
-            : new("checks", $"{ran.Count} checks passed on {head[..Math.Min(7, head.Length)]}", Tone.Plain);
+        return new("checks", head is null ? $"{ran.Count} checks passed here" : $"{ran.Count} checks passed on {head[..Math.Min(7, head.Length)]}", Tone.Plain);
     }
 }

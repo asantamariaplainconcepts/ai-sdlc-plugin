@@ -1,9 +1,7 @@
 namespace AiSdlc;
 
-/// SQLite, raw Microsoft.Data.Sqlite: opened at startup, schema created with
-/// CREATE TABLE IF NOT EXISTS. One store file under .harness/data (gitignored).
-/// POC-00 owns worktrees + fact_cache; POC-03 adds runs, POC-04 adds gate_results —
-/// later tables are additive, never a migration of these.
+// SQLite, raw: opened at startup, schema created with CREATE TABLE IF NOT EXISTS. POC-00 owns
+// worktrees + fact_cache; POC-03 adds runs, POC-04 adds gate_results — additive, never migrated.
 public sealed class Store : IDisposable
 {
     private readonly Microsoft.Data.Sqlite.SqliteConnection connection;
@@ -11,20 +9,17 @@ public sealed class Store : IDisposable
     public Store(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        this.connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}");
+        this.connection = new($"Data Source={path}");
         this.connection.Open();
         using var create = this.connection.CreateCommand();
+        // Two tables now; the header needs none of them yet (facts are read live). Runs (POC-03)
+        // and gate results (POC-04) join here additively.
         create.CommandText = """
             CREATE TABLE IF NOT EXISTS worktrees (
-                path TEXT PRIMARY KEY,
-                branch TEXT,
-                head TEXT,
-                read_at TEXT NOT NULL
+                path TEXT PRIMARY KEY, branch TEXT, head TEXT, read_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS fact_cache (
-                worktree TEXT NOT NULL,
-                fact_key TEXT NOT NULL,
-                value TEXT NOT NULL,
+                worktree TEXT NOT NULL, fact_key TEXT NOT NULL, value TEXT NOT NULL,
                 PRIMARY KEY (worktree, fact_key)
             );
             """;

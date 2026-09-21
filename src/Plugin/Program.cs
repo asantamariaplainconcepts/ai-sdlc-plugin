@@ -3,15 +3,14 @@ using AiSdlc;
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
-var storePath = Path.Combine(app.Environment.ContentRootPath, "..", "..", ".harness", "data", "poc.db");
-var store = new Store(storePath);
+// .harness/data is gitignored runtime state, found from the repo root whatever cwd the host starts in.
+var store = new Store(Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "..", ".harness", "data", "poc.db")));
 var header = new Header();
 var git = new Git();
 
 app.MapGet("/api/header", async (string? path) =>
 {
-    var target = path ?? app.Environment.ContentRootPath;
-    var reading = await header.Read(Path.GetFullPath(target));
+    var reading = await header.Read(Path.GetFullPath(path ?? app.Environment.ContentRootPath));
     store.RecordWorktree(reading.Path, reading.Branch, git.Head(reading.Path), DateTimeOffset.UtcNow.ToString("o"));
     return Results.Ok(new
     {
@@ -26,9 +25,10 @@ app.MapGet("/api/header", async (string? path) =>
 var webRoot = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "web", "dist"));
 if (Directory.Exists(webRoot))
 {
+    var files = new StaticFileOptions { FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(webRoot) };
     app.UseDefaultFiles();
-    app.UseStaticFiles(new StaticFileOptions { FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(webRoot) });
-    app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(webRoot) });
+    app.UseStaticFiles(files);
+    app.MapFallbackToFile("index.html", files);
 }
 
 app.Run();
