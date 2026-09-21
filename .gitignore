@@ -55,3 +55,15 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Harness runtime data
+.harness/data/
+
+# macOS noise
+.DS_Store
+
+# Node
+node_modules/
+
+# Vite build output
+src/web/dist/

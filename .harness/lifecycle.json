@@ -1,0 +1,67 @@
+// The loop this repository runs, read by the label watcher and by nothing else. Not written by the
+// app — unlike workflows.json this has no export, so this is a person's file end to end.
+//
+// Two machines over the same six states, because `staged` and `ship` are "the same shape with the
+// holds removed" (WorkflowsSeed.cs's own words about the two Workflows this repeats for the loop).
+// The watcher interprets under "staged" today; "ship" is declared so the second name is not a
+// second file the day something reads it.
+//
+// A state with no "always" is a state this loop only sits in — backlog, in-progress, code-review
+// and done start nothing, exactly as CommandFor's switch never named them. Only the two states a
+// person can unlock by removing a hold or finishing a review start a Run.
+{
+  "machines": {
+    "staged": {
+      "states": {
+        "backlog": {},
+        "ready-for-proposal": {
+          "always": [
+            {
+              "target": "in-progress",
+              "guard": { "allOf": ["folder", "room"], "noneOf": ["held", "liveRun"] },
+              "effect": { "type": "startRun", "prompt": "/aio:propose #{key}" }
+            }
+          ]
+        },
+        "ready-for-implementation": {
+          "always": [
+            {
+              "target": "in-progress",
+              "guard": { "allOf": ["folder", "room"], "noneOf": ["held", "liveRun"] },
+              "effect": { "type": "startRun", "prompt": "/aio:implement #{key}" }
+            }
+          ]
+        },
+        "in-progress": {},
+        "code-review": {},
+        "done": {}
+      }
+    },
+    "ship": {
+      "states": {
+        "backlog": {},
+        "ready-for-proposal": {
+          "always": [
+            {
+              "target": "in-progress",
+              "guard": { "allOf": ["folder", "room"], "noneOf": ["liveRun"] },
+              "effect": { "type": "startRun", "prompt": "/aio:propose #{key}" }
+            }
+          ]
+        },
+        "ready-for-implementation": {
+          "always": [
+            {
+              "target": "in-progress",
+              "guard": { "allOf": ["folder", "room"], "noneOf": ["liveRun"] },
+              "effect": { "type": "startRun", "prompt": "/aio:implement #{key}" }
+            }
+          ]
+        },
+        "in-progress": {},
+        "code-review": {},
+        "done": {}
+      }
+    }
+  }
+}

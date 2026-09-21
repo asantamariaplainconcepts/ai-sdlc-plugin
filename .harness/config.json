@@ -1,0 +1,9 @@
+{
+  "$comment": "Read by /aio:implement's WIP gate. Two agents at once is what one person can actually review; raised to four by the person's decision on 109.",
+  "wipLimit": 4,
+  "labels": {
+    "ready": "status:ready-for-proposal",
+    "inProgress": "status:in-progress",
+    "hold": "status:holding"
+  }
+}

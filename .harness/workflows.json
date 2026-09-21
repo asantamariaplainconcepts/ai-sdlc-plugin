@@ -1,0 +1,120 @@
+// The plans this checkout declares. Read by the app and imported by a person; nothing here runs
+// by itself. Written by the app when somebody exports, which replaces the list below — so a
+// comment written inside it does not survive, and the git diff is where you would notice.
+//
+// This is the plan: which actions a change goes through, in what order, and where the run hands
+// back. It is NOT the occasion — whether a step is skipped *this time*, and the progress of a
+// run, live in the database, because "not this time" in a git diff is absurd.
+//
+//   "run"    what it runs. Either a dotted prompt key, whose file is at
+//            `.ai/commands/aio/<name>.md` and which every runtime reaches by symlink, or a key
+//            this folder's own `.harness/commands.json` declares. Both are in the repository,
+//            which is what lets somebody follow a plan with the app switched off.
+//   "title"  what a person reads in the steps rail. Absent means the key is shown.
+//   "hold"   whether the run stops here and hands back. Absent means no.
+{
+  "workflows": [
+    {
+      "key": "controlled-candidate",
+      "name": "Controlled candidate",
+      "note": "Agent result, full local gate, then Hold. Never pushes or merges.",
+      "controlled": true,
+      "steps": [
+        {
+          "run": "aio.candidate",
+          "title": "/aio:candidate <n>"
+        },
+        {
+          "run": "controlled-ci",
+          "title": "Verify the candidate",
+          "hold": true
+        }
+      ]
+    },
+    {
+      "key": "refine",
+      "name": "Refine only",
+      "note": "one step, writes no code",
+      "steps": [
+        {
+          "run": "aio.refine",
+          "title": "Refine"
+        }
+      ]
+    },
+    {
+      "key": "retro",
+      "name": "Post-merge retro",
+      "note": "after it merged",
+      "steps": [
+        {
+          "run": "aio.review",
+          "title": "Review"
+        }
+      ]
+    },
+    {
+      "key": "review",
+      "name": "Review a PR",
+      "note": "read-only diagnosis",
+      "steps": [
+        {
+          "run": "aio.status",
+          "title": "Status"
+        }
+      ]
+    },
+    {
+      "key": "ship",
+      "name": "Ship unattended",
+      "note": "1 steps \u00B7 no holds",
+      "steps": [
+        {
+          "run": "",
+          "title": "/aio:ship"
+        }
+      ]
+    },
+    {
+      "key": "ship-to-pr",
+      "name": "Ship to PR",
+      "note": "stops once, at review",
+      "steps": [
+        {
+          "run": "aio.refine",
+          "title": "Refine"
+        },
+        {
+          "run": "aio.propose",
+          "title": "Propose"
+        },
+        {
+          "run": "aio.implement",
+          "title": "Implement",
+          "hold": true
+        }
+      ]
+    },
+    {
+      "key": "staged",
+      "name": "Staged loop",
+      "note": "3 steps \u00B7 2 holds",
+      "steps": [
+        {
+          "run": "aio.propose",
+          "title": "Propose",
+          "hold": true
+        },
+        {
+          "run": "aio.implement",
+          "title": "Implement",
+          "hold": true
+        },
+        {
+          "run": "aio.sync",
+          "title": "Sync"
+        }
+      ]
+    }
+  ]
+}
