@@ -1,129 +1,23 @@
 {
-  // Read by the app's folder probe, from whichever working directory you are looking at — this file
-  // is on a branch, so a worktree offers its own branch's list rather than the checkout's. Nothing
-  // here runs unasked: the Commands tab lists what this file offers and a person chooses, and a
-  // plan step runs one only where somebody put it in `.harness/workflows.json` and then started
-  // that workflow. Two people chose, in a file that went through review — but the sentence that
-  // used to stand here, "nothing here runs by itself", stopped being true the day a plan step
-  // could execute one of these.
+  // This repository declares its own gates: the PoC verifies itself as its first subject.
+  // Read as JSONC (comments and trailing commas allowed), bounded before parsing, and never
+  // executed by its reader.
   //
-  // Every entry may say four things beyond its name and its line:
-  //
-  //   "cwd"   where it runs, **relative to whichever checkout it is started in**. Absent means `.`.
-  //           Relative is what makes one declaration work in `main` and in every worktree of it.
-  //   "kind"  "long-running" for something that stays up until you stop it — a dev server, a
-  //           watcher — or "one-shot" for something that ends and reports its code. Absent means
-  //           one-shot. It decides whether the product offers to stop it and whether the shutdown
-  //           reaper takes it down; it decides nothing about tabs.
-  //   "tab"   whether running it opens a tab beside Claude Code and Shell. Absent means yes.
-  //   "stop"  what takes down whatever it left behind. Absent means ending the process is enough,
-  //           which is the ordinary case. Its only reader is the shutdown reaper — it does not
-  //           draw a button.
-  //   "gate"  whether its exit code counts toward whether a worktree can be merged. Absent means
-  //           no, and that is the opposite reading to "tab" on purpose: a tab is a convenience, a
-  //           place in the merge verdict is a claim, and a claim nobody made is not one to infer.
-  //           Only a one-shot may carry it — something that never ends has no exit code to count.
-  //   "verify" whether this is the command that shows a change working — what the fifth step of a
-  //           review offers to press, and what its toggle can make a step of a plan. Absent means
-  //           no, like "gate", and for the same reason: nobody's choice is not inferred from
-  //           anything. Unlike "gate" it is not restricted to a one-shot, because pressing it
-  //           opens a terminal for a person rather than contributing an exit code — but a plan
-  //           step naming a long-running command is refused at import, which is where a step
-  //           with no ending to wait for has to be caught.
+  //   "gate"  whether its exit code counts toward whether this worktree can be merged. Absent
+  //           means no — a claim nobody made is not one to infer. Only a one-shot may carry it.
   "commands": [
     {
-      "key": "controlled-ci",
-      "name": "Controlled Run gate",
-      "run": "aspire do ci --apphost src/root/AiOrchestrator.AppHost/AiOrchestrator.AppHost.csproj"
-    },
-    // The three that are statements about the change, so the merge gate counts them and "Re-run
-    // checks" runs them. They overlap `aspire do ci`, which is the gate AGENTS.md says a person
-    // actually runs before a push; these are the fast local read of the same ground, and they stay
-    // three rather than collapsing into one `ci` entry because `Build` alone is what somebody
-    // presses when they have broken the build.
-    {
-      "key": "build",
-      "name": "Build",
-      "run": "dotnet build src/AiOrchestrator.slnx",
+      "key": "gate",
+      "name": "Gate",
+      "run": "./gate.sh",
       "gate": true
     },
     {
-      "key": "tests",
-      "name": "Unit + functional",
-      "run": "dotnet test src/AiOrchestrator.slnx",
-      "gate": true
-    },
-    {
-      "key": "front",
-      "name": "Frontend gates",
-      "run": "cd src/frontend && pnpm typecheck && pnpm lint && pnpm build",
-      "gate": true
-    },
-
-    // How this checkout's own application is started and stopped, so somebody reviewing a change can
-    // open it instead of reading its diff. Two ordinary commands, and the product understands
-    // neither: it runs the one you press and reports what it exited with.
-    //
-    // **Neither is a check, and neither carries `gate`.** They are things a person presses, not
-    // statements about the change: `aspire stop` exiting 0 says nothing about whether this branch
-    // works. Until #167 nothing could say that, so the gate read `kind` instead and counted both —
-    // which meant "Re-run checks" started the application and stopped it, and a busy port turned
-    // the verdict red.
-    //
-    // **Both are one-shot, and that is not a mistake.** `aspire start` detaches — it prints the
-    // address, exits 0, and the AppHost it launched outlives the shell that asked for it. So there
-    // is no process to hold, no Stop to draw, and no address to ask anybody for: it prints its own,
-    // and a terminal's URLs are clickable. Stopping it is pressing the other command.
-    //
-    // Every word of `start` is paid for in AGENTS.md: the `.csproj` and not the directory holding
-    // it, because a directory is a glob that from a worktree also matches the parent checkout's
-    // AppHost; `--isolated`, or two worktrees fight over ports and user secrets and the second one
-    // shows you the first one's application; and `start` rather than `run`, because `run` holds the
-    // terminal and improvising around that is what once left a Postgres container alive for 36
-    // minutes after its AppHost.
-    //
-    // **`--isolated` is the word the whole arrangement rests on, and nothing in a free-text line
-    // protects it.** The safeguards are that this file is in the repository and goes through review,
-    // and that `IsolatedIsDeclaredTests` fails loudly if it is ever dropped. An address that opens
-    // the neighbouring worktree's application is exactly the symptom of somebody forgetting it.
-    {
-      "key": "start-the-app",
-      "name": "Start the app",
-      "run": "aspire start --isolated --apphost src/root/AiOrchestrator.AppHost/AiOrchestrator.AppHost.csproj",
-
-      // This is the one the fifth step of a review offers. It is not a check and carries no `gate`:
-      // it starts an application, which yields no exit code any verdict could count.
-      "verify": true,
-
-      // Here for one reader and one moment: the server's own shutdown. `aspire start` leaves
-      // containers behind that no signal reaches, and a product that starts things and forgets them
-      // at shutdown is how a port nobody can name blocks the next agent. It draws no button — the
-      // button is the command below, which a person presses.
-      "stop": "aspire stop --apphost src/root/AiOrchestrator.AppHost/AiOrchestrator.AppHost.csproj"
-    },
-    {
-      "key": "stop-the-app",
-      "name": "Stop the app",
-      "run": "aspire stop --apphost src/root/AiOrchestrator.AppHost/AiOrchestrator.AppHost.csproj"
-    },
-
-    // How this repository's own change is validated, so the Proposal step can show what `openspec`
-    // said rather than run it. The step reads the recorded result of this command by its `key`; a
-    // project that declares none is told so, and the key is the whole of the convention.
-    //
-    // **`--all`, and that is not a shortcut.** `openspec validate --strict` with no item exits 1 with
-    // *"Nothing to validate"*, and the form that names one — `openspec validate <name> --strict` —
-    // names a change whose name is different on every branch. A declared command is one fixed string
-    // in a file, so the whole-tree form is the only one that can be declared once and be correct
-    // everywhere. `--no-interactive` because nothing here is watching a prompt.
-    //
-    // **No `gate`.** Whether a change that does not validate may be merged is a decision about the
-    // merge verdict, and this is a thing to read rather than a claim about the branch. Adding the
-    // flag later is one word; taking it back once the verdict counts it is not.
-    {
+      // How this checkout's own change is validated, for the Proposal step to read.
+      // No "gate": it is a thing to read, not a claim about the branch.
       "key": "openspec-validate",
       "name": "OpenSpec validate",
-      "run": "openspec validate --all --strict --no-interactive"
+      "run": "openspec validate --all --strict"
     }
   ]
 }
