@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-22
+goal: "POC-02: Proposal and Code review step panels — read branch's declared
+  openspec change, render diff as hand-drawn diff with 200-line cap"
