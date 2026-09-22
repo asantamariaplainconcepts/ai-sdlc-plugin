@@ -6,11 +6,13 @@ public sealed class Header
 {
     private readonly Git git;
     private readonly GitHub github;
+    private readonly Store? store;
 
-    public Header(Git? git = null, GitHub? github = null)
+    public Header(Git? git = null, GitHub? github = null, Store? store = null)
     {
         this.git = git ?? new Git();
         this.github = github ?? new GitHub();
+        this.store = store;
     }
 
     public async Task<HeaderReading> Read(string path)
@@ -56,12 +58,20 @@ public sealed class Header
 
         var commands = Commands.Read(ReviewSteps.FindDeclared(cwd, "commands.json"));
         var gates = commands.Gates.Select(g => g.Name).ToList();
-        // POC-00 records no outcomes; the checks fact reads over the declared set alone.
-        var outcomes = new List<(string Name, Facts.CheckOutcome Outcome)>();
+        // POC-04 is the second writer: the latest recorded gate outcome per declared command,
+        // read from the store — Since 0 when recorded against the present HEAD, null when HEAD
+        // cannot bless the row. The checks fact keeps rendering POC-00's five readings.
+        var head = this.git.Head(cwd);
+        var recorded = this.store is null ? new Dictionary<string, GateRow>() : Gates.LatestPerGate(this.store.ListGateResults(cwd));
+        var outcomes = commands.Gates
+            .Select(g => recorded.TryGetValue(g.Key, out var row) ? (g.Name, new Facts.CheckOutcome(row.ExitCode, row.Commit == head ? 0 : null)) : ((string, Facts.CheckOutcome)?)null)
+            .Where(o => o is not null)
+            .Select(o => o!.Value)
+            .ToList();
 
         var facts = Facts.Header(new Facts.Input(
             ahead, behind, changed, DiffPending: false, this.git.Unmerged(cwd), trunk is null,
-            this.git.Uncommitted(cwd), this.git.Head(cwd), gates, outcomes, seamRows,
+            this.git.Uncommitted(cwd), head, gates, outcomes, seamRows,
             await this.github.PullRequestFor(branch, repo), PrPending: false, issueKey, issueTitle, issueState));
 
         return new HeaderReading(cwd, branch, null, facts);

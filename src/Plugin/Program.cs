@@ -5,7 +5,7 @@ var app = builder.Build();
 
 // .harness/data is gitignored runtime state, found from the repo root whatever cwd the host starts in.
 var store = new Store(Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "..", ".harness", "data", "poc.db")));
-var header = new Header();
+var header = new Header(git: null, github: null, store: store);
 var git = new Git();
 var github = new GitHub();
 var runs = new Runs(git, store);
@@ -192,8 +192,52 @@ static object RunView(RunRow row) => new
 
 static int CountLines(string body) => body.Length == 0 ? 0 : body.Split('\n').Length - (body.EndsWith('\n') ? 1 : 0);
 
-// A directory that is not there cannot be git's working directory: the process would not start.
-// Named before it is asked — a missing path is not a repository, and it is not zero either.
+// The declared gates over the candidate: POST runs them (held to completion — the same contract
+// as the runs POST) and records exit + bounded tail against the resulting commit; GET reads the
+// recorded outcomes without running anything, with staleness against the present HEAD.
+app.MapPost("/api/gates", (string? path) =>
+{
+    var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
+    var problem = NotGit(cwd, git);
+    if (problem is not null)
+    {
+        return Results.Ok(new { path = cwd, problem, gates = Array.Empty<object>() });
+    }
+
+    var outcome = Gates.RunDeclaredGates(cwd, git, store);
+    return Results.Ok(new { path = cwd, problem = outcome.Problem, gates = outcome.Gates.Select(GateView) });
+});
+
+app.MapGet("/api/gates", (string? path) =>
+{
+    var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
+    var problem = NotGit(cwd, git);
+    if (problem is not null)
+    {
+        return Results.Ok(new { path = cwd, problem, gates = Array.Empty<object>() });
+    }
+
+    var outcome = Gates.ReadDeclaredGates(cwd, git, store);
+    return Results.Ok(new { path = cwd, problem = outcome.Problem, gates = outcome.Gates.Select(GateView) });
+});
+
+// Null is not zero: a missing exit is "never judged", a missing gate is refuted with its remedy.
+static object GateView(Gates.GateView g) => new
+{
+    key = g.Key,
+    name = g.Name,
+    missing = g.Missing,
+    missingSentence = g.MissingSentence,
+    reading = g.Reading is { } reading ? reading.ToString().ToLowerInvariant() : null,
+    exitCode = g.ExitCode,
+    commit = g.Commit,
+    stale = g.Freshness == Gates.Freshness.Stale,
+    freshness = g.Freshness.ToString().ToLowerInvariant(),
+    finishedAt = g.FinishedAtIso,
+    tail = g.Tail,
+    problem = g.Problem,
+};
+
 static string? NotGit(string cwd, Git git) => !Directory.Exists(cwd)
     ? $"{cwd} is not there — point at a directory that exists"
     : git.IsRepository(cwd) ? null : "not a git repository — point at a directory git describes";
