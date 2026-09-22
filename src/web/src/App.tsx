@@ -180,8 +180,8 @@ export function App() {
           step === "proposal" ? <ProposalStep path={path} /> : step === "code" ? <CodeStep path={path} /> : step === "tests" ? <TestsStep path={path} hasPrompt={Boolean(stepped?.prompts?.includes(step))} /> : step === "evidence" ? <EvidenceStep path={path} /> : null
         ) : (
           <>
-            <p style={{ margin: "0 0 6px" }}>The steps are not implemented yet — they arrive as declared data in POC-01, and each panel</p>
-            <p style={{ margin: 0 }}>lands as its own component file mounted in one line above.</p>
+            <p style={{ margin: "0 0 6px" }}>No step selected — choose one from the rail above.</p>
+            <p style={{ margin: 0 }}>Each step is its own panel file, mounted in one line above.</p>
           </>
         )}
       </div>
