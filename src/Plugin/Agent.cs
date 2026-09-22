@@ -19,8 +19,9 @@ public static class Agent
     public sealed record LaunchResult(int ExitCode, string StdOut, string StdErr, double DurationMs, string? Problem);
 
     /// Start a command in a directory and wait for it to end. ExitCode -1 with a Problem is the
-    /// "could not start" answer — its own sentence, not a crash and not exit 0.
-    public static LaunchResult Launch(string command, IReadOnlyList<string> args, string cwd)
+    /// "could not start" answer — its own sentence, not a crash and not exit 0. A timeoutMs kills
+    /// the process tree and reports the timeout as a Problem: a wall clock is not a judge.
+    public static LaunchResult Launch(string command, IReadOnlyList<string> args, string cwd, int? timeoutMs = null)
     {
         try
         {
@@ -32,9 +33,29 @@ public static class Agent
 
             var started = System.Diagnostics.Stopwatch.StartNew();
             using var process = System.Diagnostics.Process.Start(info)!;
-            var stdout = ReadBounded(process.StandardOutput, MaxStdOutBytes);
-            var stderr = ReadBounded(process.StandardError, MaxStdErrBytes);
-            process.WaitForExit();
+            string stdout, stderr;
+            if (timeoutMs is { } limit)
+            {
+                // Drain through tasks so a stuck child cannot wedge the read before the kill.
+                var outTask = Task.Run(() => ReadBounded(process.StandardOutput, MaxStdOutBytes));
+                var errTask = Task.Run(() => ReadBounded(process.StandardError, MaxStdErrBytes));
+                if (!process.WaitForExit(limit))
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit(5000);
+                    return new(-1, "", "", started.Elapsed.TotalMilliseconds, $"{command} timed out after {limit}ms — killed, not judged");
+                }
+
+                stdout = outTask.Result;
+                stderr = errTask.Result;
+            }
+            else
+            {
+                stdout = ReadBounded(process.StandardOutput, MaxStdOutBytes);
+                stderr = ReadBounded(process.StandardError, MaxStdErrBytes);
+                process.WaitForExit();
+            }
+
             started.Stop();
             return new(process.ExitCode, stdout, stderr, started.Elapsed.TotalMilliseconds, null);
         }

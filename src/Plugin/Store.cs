@@ -32,6 +32,11 @@ public sealed class Store : IDisposable
             CREATE TABLE IF NOT EXISTS runs_capture (
                 session_id TEXT PRIMARY KEY, stdout TEXT
             );
+            CREATE TABLE IF NOT EXISTS gate_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, worktree_path TEXT NOT NULL, head_commit TEXT NOT NULL,
+                command_key TEXT NOT NULL, exit_code INTEGER, output_tail TEXT NOT NULL,
+                finished_at TEXT NOT NULL, problem TEXT
+            );
             """;
         create.ExecuteNonQuery();
     }
@@ -94,6 +99,40 @@ public sealed class Store : IDisposable
                 reader.IsDBNull(7) ? null : reader.GetDecimal(7), Int(reader, 8),
                 reader.IsDBNull(9) ? null : reader.GetDouble(9), Text(reader, 10), reader.GetInt32(11) == 1,
                 Text(reader, 12), null, null));
+        }
+
+        return rows;
+    }
+
+    /// Gate outcomes, INSERT-only (POC-04): a re-run adds rows, a moved HEAD makes old rows
+    /// stale by comparison — never an update. Most recent first for the listing.
+    public long RecordGateResult(GateRow row)
+    {
+        using var command = this.connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO gate_results (worktree_path, head_commit, command_key, exit_code, output_tail, finished_at, problem)
+            VALUES ($wt, $commit, $key, $exit, $tail, $finished, $problem); SELECT last_insert_rowid();
+            """;
+        command.Parameters.AddWithValue("$wt", row.WorktreePath);
+        command.Parameters.AddWithValue("$commit", row.Commit);
+        command.Parameters.AddWithValue("$key", row.CommandKey);
+        command.Parameters.AddWithValue("$exit", (object?)row.ExitCode ?? DBNull.Value);
+        command.Parameters.AddWithValue("$tail", row.Tail);
+        command.Parameters.AddWithValue("$finished", row.FinishedAtIso);
+        command.Parameters.AddWithValue("$problem", (object?)row.Problem ?? DBNull.Value);
+        return (long)command.ExecuteScalar()!;
+    }
+
+    public IReadOnlyList<GateRow> ListGateResults(string worktreePath)
+    {
+        using var command = this.connection.CreateCommand();
+        command.CommandText = "SELECT id, worktree_path, head_commit, command_key, exit_code, output_tail, finished_at, problem FROM gate_results WHERE worktree_path = $path ORDER BY id DESC";
+        command.Parameters.AddWithValue("$path", worktreePath);
+        using var reader = command.ExecuteReader();
+        var rows = new List<GateRow>();
+        while (reader.Read())
+        {
+            rows.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), Int(reader, 4), reader.GetString(5), reader.GetString(6), Text(reader, 7)));
         }
 
         return rows;
