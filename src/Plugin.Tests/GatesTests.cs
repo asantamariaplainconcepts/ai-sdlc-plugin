@@ -201,4 +201,51 @@ public class GatesTests
         launch.Problem.ShouldNotBeNull();
         launch.Problem!.ShouldContain("timed out");
     }
+
+    // 3.4 Orchestration survivors (F4): the refute-at-declaration wiring through the real
+    // RunDeclaredGates/ReadDeclaredGates — the pure helpers above are covered, but the wiring
+    // a refactor could silently break (missing ⇒ no launch, no row) is its own fact.
+    [Fact]
+    public void A_declared_missing_binary_is_refuted_through_the_run_orchestration()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"gates_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Join(repo, ".harness"));
+        File.WriteAllText(Path.Join(repo, ".harness", "commands.json"),
+            """{"commands":[{"key":"ghost","name":"Ghost","run":"definitely-not-a-real-binary","gate":true}]}""");
+        var db = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"{Guid.NewGuid():N}.db");
+        using var store = new Store(db);
+        var git = new Git();
+
+        var outcome = Gates.RunDeclaredGates(repo, git, store);
+
+        outcome.Gates.ShouldHaveSingleItem();
+        var gate = outcome.Gates[0];
+        gate.Missing.ShouldBeTrue();
+        gate.Reading.ShouldBeNull();
+        gate.MissingSentence.ShouldNotBeNull();
+        gate.MissingSentence!.ShouldContain("definitely-not-a-real-binary");
+        // The contract of the refusal: no process started, no row recorded — the store is empty.
+        store.ListGateResults(repo).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_declared_missing_binary_is_refuted_through_the_read_orchestration()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"gates_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Join(repo, ".harness"));
+        File.WriteAllText(Path.Join(repo, ".harness", "commands.json"),
+            """{"commands":[{"key":"ghost","name":"Ghost","run":"definitely-not-a-real-binary","gate":true}]}""");
+        var db = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"{Guid.NewGuid():N}.db");
+        using var store = new Store(db);
+        var git = new Git();
+
+        var outcome = Gates.ReadDeclaredGates(repo, git, store);
+
+        outcome.Gates.ShouldHaveSingleItem();
+        outcome.Gates[0].Missing.ShouldBeTrue();
+        outcome.Gates[0].MissingSentence.ShouldNotBeNull();
+        outcome.Gates[0].MissingSentence!.ShouldContain("definitely-not-a-real-binary");
+        store.ListGateResults(repo).ShouldBeEmpty();
+    }
 }
+
