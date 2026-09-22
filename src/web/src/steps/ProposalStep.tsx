@@ -11,7 +11,7 @@ import remarkGfm from "remark-gfm";
  * is marked as the one — which change a branch is about is not a fact on disk.
  */
 
-type Artifact = { name: string; path: string };
+type Artifact = { name: string; path: string; relative: string };
 
 type DeclaredChange = { name: string; path: string; artifacts: Artifact[] };
 
@@ -19,6 +19,7 @@ type Proposal = {
   path: string;
   problem: string | null;
   root: string | null;
+  absence: string | null;
   changes: DeclaredChange[];
 };
 
@@ -35,7 +36,7 @@ export function ProposalStep({ path }: { path: string }) {
     setChosen(null);
     fetch(`/api/proposal?path=${encodeURIComponent(path)}`)
       .then((r) => (r.ok ? (r.json() as Promise<Proposal>) : Promise.reject(new Error(`the server said ${r.status}`))))
-      .then(setProposal, () => setProposal({ path, problem: "the declaration could not be read", root: null, changes: [] }));
+      .then(setProposal, () => setProposal({ path, problem: "the declaration could not be read", root: null, absence: null, changes: [] }));
   }, [path]);
 
   // The selection follows the list: an artifact that stops existing while somebody reads it
@@ -50,10 +51,12 @@ export function ProposalStep({ path }: { path: string }) {
       return;
     }
 
-    fetch(`/api/artifact?file=${encodeURIComponent(reading.path)}`)
+    // The artifact read is confined server-side: the worktree it belongs to plus the path the
+    // proposal listing returned, both asked for together.
+    fetch(`/api/artifact?path=${encodeURIComponent(path)}&file=${encodeURIComponent(reading.relative)}`)
       .then((r) => (r.ok ? (r.json() as Promise<ArtifactRead>) : Promise.reject(new Error(`the server said ${r.status}`))))
       .then(setText, () => setText({ path: reading.path, text: null, problem: "the artifact could not be read" }));
-  }, [reading?.path]);
+  }, [path, reading?.path]);
 
   if (!proposal) {
     return <p style={{ margin: 0 }}>reading the declaration…</p>;
@@ -66,10 +69,8 @@ export function ProposalStep({ path }: { path: string }) {
   if (proposal.changes.length === 0) {
     return (
       <p style={{ margin: 0 }}>
-        this branch declares no change — it would be written at{" "}
-        <span className="mono">
-          {(proposal.root ?? proposal.path) + "/openspec/changes/<name>/proposal.md"}
-        </span>
+        {/* The served sentence, not one rebuilt here — the reading owns its own words. */}
+        {proposal.absence ?? "this branch declares no change"}
       </p>
     );
   }

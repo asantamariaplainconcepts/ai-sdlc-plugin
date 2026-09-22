@@ -99,6 +99,8 @@ app.MapGet("/api/proposal", (string? path) =>
         path = cwd,
         problem = (string?)null,
         root = discovery.Root,
+        // The absence sentence served, not rebuilt client-side — one source of truth.
+        absence = discovery.Absence,
         changes = discovery.Changes.Select(c => new { name = c.Name, path = c.Path,
             artifacts = c.Artifacts.Select(a => new { name = a.Name, path = a.Path, relative = Path.GetRelativePath(cwd, a.Path) }) }),
     });
