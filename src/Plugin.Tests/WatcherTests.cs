@@ -118,9 +118,10 @@ public class WatcherTests
     }
 
     // 2.2 The refused row carries no trigger — the column stays button/poll/not-said; the
-    // refused value is named in the problem, never stored.
+    // refused value is named in the problem, never stored. And the refusal is RECORDED: a row
+    // exists for it in the store, so "why did nothing happen" is answered by the listing.
     [Fact]
-    public void An_unknown_trigger_is_refused_and_records_no_trigger()
+    public void An_unknown_trigger_is_refused_records_no_trigger_and_is_persisted()
     {
         var db = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"{Guid.NewGuid():N}.db");
         using var store = new Store(db);
@@ -128,10 +129,37 @@ public class WatcherTests
         var refused = runs.LaunchAndRecord("/tmp/not-a-repository", "tests", "webhook");
         refused.Problem.ShouldBe(Triggers.Refusal("webhook"));
         refused.Row.Trigger.ShouldBeNull();
-        // The positive anchor: a trigger the vocabulary knows is NOT refused on that ground.
-        var button = runs.LaunchAndRecord("/tmp/not-a-repository", "tests", "button");
-        button.Problem.ShouldNotBe(Triggers.Refusal("button"));
-        store.ListRuns("/tmp/not-a-repository").ShouldBeEmpty();
+
+        // The store holds the refusal: one row, the refusal's own sentence, no session facts.
+        var rows = store.ListRuns("/tmp/not-a-repository");
+        rows.ShouldHaveSingleItem();
+        rows[0].Problem.ShouldBe(Triggers.Refusal("webhook"));
+        rows[0].Trigger.ShouldBeNull();
+        rows[0].ExitCode.ShouldBeNull();
+    }
+
+    // 2.2 A known trigger is still refused when no prompt is declared — the same recorded
+    // refusal, named for the absence that caused it. The row is the answer the watcher's
+    // newest-row predicate reads; an unpersisted one made it re-ask forever, silently.
+    [Fact]
+    public void A_launch_without_a_declared_prompt_is_refused_and_recorded()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"watcher_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var db = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"{Guid.NewGuid():N}.db");
+        using var store = new Store(db);
+        var runs = new Runs(new Git(), store);
+
+        var refused = runs.LaunchAndRecord(dir, "tests", Triggers.Poll);
+
+        refused.Problem.ShouldNotBeNull();
+        refused.Row.Trigger.ShouldBeNull();
+        var rows = store.ListRuns(dir);
+        rows.ShouldHaveSingleItem();
+        rows[0].Problem.ShouldNotBeNull();
+        // No session facts on a refusal — it never launched, and the row says so.
+        rows[0].ExitCode.ShouldBeNull();
+        rows[0].CostUsd.ShouldBeNull();
     }
 
     // 3.1 The config: off by default, 300 seconds, no paths — each default provable.
@@ -197,26 +225,33 @@ public class WatcherTests
         Watcher.ShouldLaunch(null, null).ShouldBeFalse();
     }
 
-    // 5.4 The recorded two-trigger evidence, through the real store: same shape, different trigger.
-    // The button and the poll rows sit side by side in one listing — the record is the only place
-    // the divergence lives.
+    // 5.4 The two-trigger evidence, through the real launch contract and its store: same shape,
+    // different trigger. The refused launches are the fixture here — refused rows ARE recorded
+    // rows now, so the check exercises LaunchAndRecord end to end instead of fabricating rows.
     [Fact]
     public void The_refused_poll_and_button_rows_share_one_shape()
     {
+        var dir = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"watcher_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
         var db = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"{Guid.NewGuid():N}.db");
         using var store = new Store(db);
-        // Refused runs are a LaunchAndRecord outcome too (no prompt declared): the row exists,
-        // records no session facts, and carries its trigger like any other.
-        var button = Row("session-one", "button");
-        var poll = Row("session-two", "poll");
-        store.RecordRun(button);
-        store.RecordRun(poll);
+        var runs = new Runs(new Git(), store);
 
-        var rows = store.ListRuns("/tmp/wt");
+        // Refused launches (no prompt declared here) through the one contract, both triggers.
+        var button = runs.LaunchAndRecord(dir, "tests", "button");
+        var poll = runs.LaunchAndRecord(dir, "tests", Triggers.Poll);
+
+        // Both refused on the same ground — no declared prompt — and both recorded.
+        button.Problem.ShouldNotBeNull();
+        poll.Problem.ShouldNotBeNull();
+
+        var rows = store.ListRuns(dir);
         rows.Count.ShouldBe(2);
-        // Indistinguishable except the trigger: both are recorded, both carry the same columns.
+        // Indistinguishable except the refusal sentence they carry: both recorded, both the
+        // same shape — no session facts, no trigger, the problem is the divergence.
         rows[0].Step.ShouldBe(rows[1].Step);
-        rows[0].ExitCode.ShouldBe(rows[1].ExitCode);
-        rows[0].Problem.ShouldBe(rows[1].Problem);
+        rows[0].ExitCode.ShouldBeNull();
+        rows[1].ExitCode.ShouldBeNull();
+        rows[0].Trigger.ShouldBeNull();
     }
 }

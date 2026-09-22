@@ -117,7 +117,7 @@ public sealed class Store : IDisposable
                 Text(reader, 4), Int(reader, 5), Int(reader, 6) == 1 ? true : Int(reader, 6) is null ? null : false,
                 reader.IsDBNull(7) ? null : reader.GetDecimal(7), Int(reader, 8),
                 reader.IsDBNull(9) ? null : reader.GetDouble(9), Text(reader, 10), reader.GetInt32(11) == 1,
-                Text(reader, 12), null, null, Text(reader, 14)));
+                Text(reader, 12), null, Text(reader, 13), Text(reader, 14)));
         }
 
         return rows;

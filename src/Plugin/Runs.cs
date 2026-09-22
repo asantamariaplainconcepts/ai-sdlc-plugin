@@ -2,7 +2,9 @@ namespace AiSdlc;
 
 // One launch contract: resolve the step's declared prompt, mint the session id, pin the commit,
 // run claude to completion, and write the row — whatever happened. A run is recorded even when
-// the agent fails, and the row says which of process failure and provider error it was.
+// the agent fails, and the row says which of process failure and provider error it was. A
+// refusal is recorded too: a row that says why nothing launched — an unpersisted refusal made
+// the watcher's newest-row predicate re-ask the same question forever.
 public sealed class Runs(Git git, Store store)
 {
     public sealed record LaunchOutcome(RunRow Row, long Id, string? Problem);
@@ -24,7 +26,9 @@ public sealed class Runs(Git git, Store store)
         var startedAt = DateTimeOffset.UtcNow.ToString("o");
         if (prompt is null)
         {
-            return this.Refused(cwd, step, sessionId, startedAt, declared.Problem ?? "no prompt is declared for that step", trigger);
+            // The same no-trigger rule as the vocabulary refusal: a refused row is about why
+            // nothing launched, not about who asked.
+            return this.Refused(cwd, step, sessionId, startedAt, declared.Problem ?? "no prompt is declared for that step", null);
         }
 
         var worktree = Path.GetFullPath(cwd);
@@ -51,11 +55,16 @@ public sealed class Runs(Git git, Store store)
         return new(row, id, null);
     }
 
-    // Refused: the launch never happened, and the row says why rather than pretending a run did.
-    // The trigger rides even a refused row — a refused poller run and a refused button run are
-    // still rows of the same two contracts.
-    private LaunchOutcome Refused(string cwd, string step, string sessionId, string startedAt, string why, string? trigger) =>
-        new(new RunRow(sessionId, Path.GetFullPath(cwd), step, null, null, startedAt, null, null, null, null, null, null, null, false, null, null, why, trigger), 0, why);
+    // Refused: the launch never happened, and the row that says why is recorded — the same
+    // INSERT-only store every other outcome writes. No trigger on a refused row (the column
+    // stays button/poll/not-said; the refused value is named in the problem sentence), and no
+    // session facts — the row is the refusal, never a pretend run.
+    private LaunchOutcome Refused(string cwd, string step, string sessionId, string startedAt, string why, string? trigger)
+    {
+        var row = new RunRow(sessionId, Path.GetFullPath(cwd), step, null, null, startedAt, null, null, null, null, null, null, null, false, null, null, why, trigger);
+        var id = store.RecordRun(row);
+        return new(row, id, why);
+    }
 
     public IReadOnlyList<RunRow> List(string cwd) => store.ListRuns(Path.GetFullPath(cwd));
 
