@@ -7,15 +7,22 @@ public sealed class Runs(Git git, Store store)
 {
     public sealed record LaunchOutcome(RunRow Row, long Id, string? Problem);
 
-    public LaunchOutcome LaunchAndRecord(string cwd, string step)
+    public LaunchOutcome LaunchAndRecord(string cwd, string step, string trigger = "button")
     {
+        // The closed vocabulary is a declaration checked, not guessed — an unknown trigger is
+        // refused before anything is minted, the same discipline a declared file gets.
+        if (!Triggers.Known(trigger))
+        {
+            return this.Refused(cwd, step, Guid.NewGuid().ToString(), DateTimeOffset.UtcNow.ToString("o"), Triggers.Refusal(trigger), trigger);
+        }
+
         var declared = ReviewSteps.Read(ReviewSteps.FindDeclared(cwd, "review.json"));
         var prompt = ReviewSteps.PromptFor(declared, step);
         var sessionId = Guid.NewGuid().ToString();
         var startedAt = DateTimeOffset.UtcNow.ToString("o");
         if (prompt is null)
         {
-            return this.Refused(cwd, step, sessionId, startedAt, declared.Problem ?? "no prompt is declared for that step");
+            return this.Refused(cwd, step, sessionId, startedAt, declared.Problem ?? "no prompt is declared for that step", trigger);
         }
 
         var worktree = Path.GetFullPath(cwd);
@@ -32,7 +39,7 @@ public sealed class Runs(Git git, Store store)
             transcript.Path, transcript.Located,
             facts.ResultSummary is { Length: > 512 } summary ? summary[..512] : facts.ResultSummary,
             launch.StdErr is { Length: > 0 } err ? err[^Math.Min(err.Length, 2048)..] : null,
-            launch.Problem ?? facts.Problem);
+            launch.Problem ?? facts.Problem, trigger);
         var id = store.RecordRun(row);
         if (launch.StdOut.Length > 0)
         {
@@ -43,8 +50,10 @@ public sealed class Runs(Git git, Store store)
     }
 
     // Refused: the launch never happened, and the row says why rather than pretending a run did.
-    private LaunchOutcome Refused(string cwd, string step, string sessionId, string startedAt, string why) =>
-        new(new RunRow(sessionId, Path.GetFullPath(cwd), step, null, null, startedAt, null, null, null, null, null, null, null, false, null, null, why), 0, why);
+    // The trigger rides even a refused row — a refused poller run and a refused button run are
+    // still rows of the same two contracts.
+    private LaunchOutcome Refused(string cwd, string step, string sessionId, string startedAt, string why, string trigger) =>
+        new(new RunRow(sessionId, Path.GetFullPath(cwd), step, null, null, startedAt, null, null, null, null, null, null, null, false, null, null, why, trigger), 0, why);
 
     public IReadOnlyList<RunRow> List(string cwd) => store.ListRuns(Path.GetFullPath(cwd));
 

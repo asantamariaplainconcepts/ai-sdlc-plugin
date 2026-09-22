@@ -27,7 +27,7 @@ public sealed class Store : IDisposable
                 step TEXT, prompt TEXT, starting_commit TEXT, started_at TEXT NOT NULL, finished_at TEXT,
                 exit_code INTEGER, is_error INTEGER, cost_usd REAL, num_turns INTEGER, duration_ms REAL,
                 transcript_path TEXT, transcript_located INTEGER NOT NULL DEFAULT 0,
-                result_summary TEXT, stderr_tail TEXT, problem TEXT
+                result_summary TEXT, stderr_tail TEXT, problem TEXT, trigger TEXT
             );
             CREATE TABLE IF NOT EXISTS runs_capture (
                 session_id TEXT PRIMARY KEY, stdout TEXT
@@ -39,6 +39,24 @@ public sealed class Store : IDisposable
             );
             """;
         create.ExecuteNonQuery();
+        this.AddColumnIfMissing("runs", "trigger", "TEXT");
+    }
+
+    /// CREATE TABLE IF NOT EXISTS never migrates: a database born under POC-03 has no trigger
+    /// column, and this guarded ALTER is the whole migration — checked by pragma, idempotent,
+    /// additive. Old rows read trigger NULL: not said, which is not button and not poll.
+    private void AddColumnIfMissing(string table, string column, string type)
+    {
+        using var check = this.connection.CreateCommand();
+        check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'";
+        if ((long)check.ExecuteScalar()! > 0)
+        {
+            return;
+        }
+
+        using var alter = this.connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {type}";
+        alter.ExecuteNonQuery();
     }
 
     /// The full output blob, kept by session id: one session is one run, so overwriting the same
@@ -53,7 +71,7 @@ public sealed class Store : IDisposable
     }
 
     /// Paired with the RunRow order they fill; nulls kept as absences.
-    private static readonly string[] RunColumns = ["session_id", "worktree_path", "step", "prompt", "starting_commit", "started_at", "finished_at", "exit_code", "is_error", "cost_usd", "num_turns", "duration_ms", "transcript_path", "transcript_located", "result_summary", "stderr_tail", "problem"];
+    private static readonly string[] RunColumns = ["session_id", "worktree_path", "step", "prompt", "starting_commit", "started_at", "finished_at", "exit_code", "is_error", "cost_usd", "num_turns", "duration_ms", "transcript_path", "transcript_located", "result_summary", "stderr_tail", "problem", "trigger"];
 
     /// INSERT only: a second run on the same worktree is a second row, whatever happened. Cost
     /// absent stays NULL — null is not the same as free.
@@ -66,6 +84,7 @@ public sealed class Store : IDisposable
             row.ExitCode ?? (object)DBNull.Value, row.IsError is { } e ? (e ? 1 : 0) : DBNull.Value, row.CostUsd ?? (object)DBNull.Value,
             row.NumTurns ?? (object)DBNull.Value, row.DurationMs ?? (object)DBNull.Value, row.TranscriptPath ?? (object)DBNull.Value,
             row.TranscriptLocated ? 1 : 0, row.ResultSummary ?? (object)DBNull.Value, row.StderrTail ?? (object)DBNull.Value, row.Problem ?? (object)DBNull.Value,
+            row.Trigger ?? (object)DBNull.Value,
         };
         using var command = this.connection.CreateCommand();
         var columns = string.Join(", ", RunColumns);
@@ -87,7 +106,7 @@ public sealed class Store : IDisposable
     public IReadOnlyList<RunRow> ListRuns(string worktreePath)
     {
         using var command = this.connection.CreateCommand();
-        command.CommandText = "SELECT session_id, step, starting_commit, started_at, finished_at, exit_code, is_error, cost_usd, num_turns, duration_ms, transcript_path, transcript_located, result_summary, problem FROM runs WHERE worktree_path = $path ORDER BY id DESC";
+        command.CommandText = "SELECT session_id, step, starting_commit, started_at, finished_at, exit_code, is_error, cost_usd, num_turns, duration_ms, transcript_path, transcript_located, result_summary, problem, trigger FROM runs WHERE worktree_path = $path ORDER BY id DESC";
         command.Parameters.AddWithValue("$path", worktreePath);
         using var reader = command.ExecuteReader();
         var rows = new List<RunRow>();
@@ -98,7 +117,7 @@ public sealed class Store : IDisposable
                 Text(reader, 4), Int(reader, 5), Int(reader, 6) == 1 ? true : Int(reader, 6) is null ? null : false,
                 reader.IsDBNull(7) ? null : reader.GetDecimal(7), Int(reader, 8),
                 reader.IsDBNull(9) ? null : reader.GetDouble(9), Text(reader, 10), reader.GetInt32(11) == 1,
-                Text(reader, 12), null, null));
+                Text(reader, 12), null, null, Text(reader, 14)));
         }
 
         return rows;
@@ -157,9 +176,10 @@ public sealed class Store : IDisposable
     }
 }
 
-/// A run's record; every null is an absence — cost null is "not given", exit null is "never ran".
+/// A run's record; every null is an absence — cost null is "not given", exit null is "never ran",
+/// trigger null is "not said" (the row predates the column or its caller said nothing).
 public sealed record RunRow(
     string SessionId, string WorktreePath, string? Step, string? Prompt, string? StartingCommit,
     string StartedAtIso, string? FinishedAtIso, int? ExitCode, bool? IsError, decimal? CostUsd,
     int? NumTurns, double? DurationMs, string? TranscriptPath, bool TranscriptLocated,
-    string? ResultSummary, string? StderrTail, string? Problem);
+    string? ResultSummary, string? StderrTail, string? Problem, string? Trigger = null);

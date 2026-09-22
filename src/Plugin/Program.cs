@@ -1,14 +1,20 @@
 using AiSdlc;
 
 var builder = WebApplication.CreateBuilder(args);
+// The watcher resolves these from DI: the same runs/git/store the endpoints use, so its launches
+// go through the one contract. Disabled by default — Watcher:Enabled absent ⇒ no loop at all.
+builder.Services.AddSingleton<Store>(_ => new Store(Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", ".harness", "data", "poc.db"))));
+builder.Services.AddSingleton<Git>(static _ => new Git());
+builder.Services.AddSingleton<Runs>();
+builder.Services.AddHostedService<Watcher>();
 var app = builder.Build();
 
 // .harness/data is gitignored runtime state, found from the repo root whatever cwd the host starts in.
-var store = new Store(Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "..", ".harness", "data", "poc.db")));
-var header = new Header(git: null, github: null, store: store);
-var git = new Git();
+var git = app.Services.GetRequiredService<Git>();
 var github = new GitHub();
-var runs = new Runs(git, store);
+var store = app.Services.GetRequiredService<Store>();
+var header = new Header(git: null, github: null, store: store);
+var runs = app.Services.GetRequiredService<Runs>();
 
 app.MapGet("/api/header", async (string? path) =>
 {
@@ -158,17 +164,21 @@ app.MapGet("/api/code", (string? path) =>
 
 // A worktree's runs: POST launches claude for a declared step's prompt and holds to completion
 // (no streaming — the epic's "no es"), recording the run against its starting commit whatever
-// happened; GET lists, most recent first.
-app.MapPost("/api/runs", (string? path, string? step) =>
+// happened — the SAME launch contract the poller calls with trigger "poll"; the only divergence
+// between the two callers is the value stored on the row. GET lists, most recent first.
+app.MapPost("/api/runs", (string? path, string? step, string? trigger) =>
 {
     var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
-    var problem = NotGit(cwd, git) ?? (string.IsNullOrWhiteSpace(step) ? "name the step to run (?step=)" : null);
+    var t = string.IsNullOrWhiteSpace(trigger) ? Triggers.Button : trigger;
+    var problem = NotGit(cwd, git)
+        ?? (string.IsNullOrWhiteSpace(step) ? "name the step to run (?step=)" : null)
+        ?? (Triggers.Known(t) ? null : Triggers.Refusal(t));
     if (problem is not null)
     {
         return Results.Ok(new { path = cwd, problem, run = (object?)null });
     }
 
-    var outcome = runs.LaunchAndRecord(cwd, step!);
+    var outcome = runs.LaunchAndRecord(cwd, step!, t);
     return Results.Ok(new { path = cwd, problem = outcome.Problem, run = RunView(outcome.Row) });
 });
 
@@ -187,7 +197,7 @@ static object RunView(RunRow row) => new
     startedAt = row.StartedAtIso, finishedAt = row.FinishedAtIso, exitCode = row.ExitCode, isError = row.IsError,
     costUsd = row.CostUsd, numTurns = row.NumTurns, durationMs = row.DurationMs,
     transcriptPath = row.TranscriptPath, transcriptLocated = row.TranscriptLocated,
-    resultSummary = row.ResultSummary, problem = row.Problem,
+    resultSummary = row.ResultSummary, problem = row.Problem, trigger = row.Trigger,
 };
 
 static int CountLines(string body) => body.Length == 0 ? 0 : body.Split('\n').Length - (body.EndsWith('\n') ? 1 : 0);
