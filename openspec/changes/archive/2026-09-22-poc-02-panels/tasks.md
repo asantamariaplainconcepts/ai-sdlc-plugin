@@ -28,5 +28,5 @@
 
 - [x] 5.1 `./gate.sh` green (dotnet build+test warnaserror, web tsc+vite build, openspec validate --strict)
 - [x] 5.2 cloc budget: ≤ 250 lines added this cut (tests excluded), measured with the perl cloc
-  - measured over 99da57a: 599→880 C# (+281), 167→385 TS (+218) = **+499, over the 250 cap** — recorded as debt, see design.md's budget risk line: the cap sat below this design's own estimate for two spec-mandated panels; trimming the named fallback (~20 lines) mangles a working layout, overage carried honestly rather than silently cut
+  - measured over 99da57a: 599→895 C# (+296), 167→385 TS (+218) = **+514, over the 250 cap** — recorded as debt, see design.md's budget risk line: the cap sat below this design's own estimate for two spec-mandated panels; the named fallback trim (~20 lines) mangles a working layout, overage carried honestly rather than silently cut
 - [x] 5.3 Two-subject spot check by hand: this worktree (live change `poc-02-panels`, diff over the merge base, markdown rendering) and a path with no openspec dir (absence named)
