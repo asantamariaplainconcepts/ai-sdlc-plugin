@@ -70,7 +70,90 @@ app.MapGet("/api/steps", async (string? path) =>
     });
 });
 
+// What the branch declares as its change: the live openspec/changes directories of the worktree,
+// listed; one artifact's text per read, bounded. Absence names the path where a declaration
+// would be written — a branch with no change is an ordinary branch, said out loud.
+app.MapGet("/api/proposal", (string? path) =>
+{
+    var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
+    if (!git.IsRepository(cwd))
+    {
+        return Results.Ok(new { path = cwd, problem = "not a git repository — point at a directory git describes", root = (string?)null,
+            changes = Array.Empty<object>() });
+    }
+
+    var discovery = Change.Discover(cwd);
+    return Results.Ok(new
+    {
+        path = cwd,
+        problem = (string?)null,
+        root = discovery.Root,
+        changes = discovery.Changes.Select(c => new { name = c.Name, path = c.Path,
+            artifacts = c.Artifacts.Select(a => new { name = a.Name, path = a.Path }) }),
+    });
+});
+
+app.MapGet("/api/artifact", (string? path, string? file) =>
+{
+    if (string.IsNullOrWhiteSpace(file))
+    {
+        return Results.BadRequest(new { problem = "name the artifact file to read (?file=)" });
+    }
+
+    var read = Change.ReadArtifact(Path.GetFullPath(file));
+    return Results.Ok(new { path = read.Path, text = read.Text, problem = read.Problem });
+});
+
+// The change as a diff: parsed to files, hunks and clasped lines, capped at two hundred presented
+// lines with the hidden count named. Not asked — no trunk, not a repository — is a sentence,
+// never an empty diff.
+app.MapGet("/api/code", (string? path) =>
+{
+    var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
+    if (!git.IsRepository(cwd))
+    {
+        return Results.Ok(new { path = cwd, problem = "not a git repository — point at a directory git describes", basis = (string?)null,
+            cutAfter = (int?)null, hiddenLinesCount = 0, files = Array.Empty<object>() });
+    }
+
+    var trunk = git.Trunk(cwd);
+    if (trunk is null || git.DiffBasis(cwd, trunk) is not { } basis)
+    {
+        return Results.Ok(new { path = cwd, problem = "the diff is not asked — no trunk to compare against, fetch the default branch", basis = (string?)null,
+            cutAfter = (int?)null, hiddenLinesCount = 0, files = Array.Empty<object>() });
+    }
+
+    var text = git.PatchText(cwd, basis);
+    // Files git has never been told about are all-added rows, the numstat rule: they are part of
+    // the change the branch declares even though no diff engine has seen them.
+    var untracked = git.Untracked(cwd);
+    foreach (var name in untracked)
+    {
+        var body = File.Exists(Path.Join(cwd, name)) ? File.ReadAllText(Path.Join(cwd, name)) : "";
+        text += $"\ndiff --git a/{name} b/{name}\n--- /dev/null\n+++ b/{name}\n@@ -0,0 +1,{CountLines(body)} @@\n{string.Concat(body.Split('\n').Select(l => $"+{l}\n"))}";
+    }
+
+    var read = Patch.Parse(text);
+    return Results.Ok(new
+    {
+        path = cwd,
+        problem = (string?)null,
+        basis,
+        cutAfter = read.CutAfter,
+        hiddenLinesCount = read.HiddenLines,
+        files = read.Files.Select(f => new
+        {
+            path = f.Path, renamedFrom = f.RenamedFrom, isBinary = f.IsBinary,
+            hunks = f.Hunks.Select(h => new { header = h.Header,
+                lines = h.Lines.Select(l => new { kind = l.Kind.ToString().ToLowerInvariant(), oldLine = l.OldLine, newLine = l.NewLine, text = l.Text }) }),
+        }),
+    });
+});
+
+static int CountLines(string body) => body.Length == 0 ? 0 : body.Split('\n').Length - (body.EndsWith('\n') ? 1 : 0);
+
 // One host, no CORS, no base URL: the built frontend is served same-origin from src/web/dist.
+
 var webRoot = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "web", "dist"));
 if (Directory.Exists(webRoot))
 {

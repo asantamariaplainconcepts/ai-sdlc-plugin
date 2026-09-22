@@ -69,6 +69,12 @@ public sealed class Git
 
     public string? DiffBasis(string cwd, string? trunk) => Output(cwd, "merge-base", trunk ?? "HEAD", "HEAD").Trim() is { Length: > 0 } basis ? basis : trunk;
 
+    /// The patch text of the change against a basis, porcelain-readable: quotepath off so paths
+    /// stay literal, no color, three context lines. Untracked files ride along the way they do in
+    /// numstat — git diff does not see a file nobody staged.
+    public string PatchText(string cwd, string basis) =>
+        Output(cwd, "-c", "core.quotepath=off", "diff", "--unified=3", "--no-color", basis);
+
     /// Files git has never been told about, as diff rows: without these a new-file change reads empty.
     public IReadOnlyList<string> Untracked(string cwd) =>
         Output(cwd, "ls-files", "-z", "--others", "--exclude-standard").Split('\0').Where(e => e.Length > 0 && !e.EndsWith('/')).ToList();
