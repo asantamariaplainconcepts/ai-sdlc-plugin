@@ -1,0 +1,36 @@
+{
+  // The steps of a review, declared rather than coded: changing this file changes the wizard
+  // without touching code. Each step is what a person walks over to trust a change — the same
+  // idea the harness at 837c7ca keeps as five fixed steps; here they are data, so a folder can
+  // say what its own review is.
+  //
+  // Each entry says three things:
+  //
+  //   "key"      the step's identity. The provider marks progression with a `reviewed:<key>`
+  //              label on the resolved issue — nothing here and nothing in the app writes it;
+  //              the tick is drawn from the label's presence, read-only.
+  //   "title"    what the step is called on the rail.
+  //   "asserts"  one line saying what reviewing this step asserts — the question a person is
+  //              answering when they mark it.
+  //
+  // What the file declares and what the app implements are two different facts: a declared step
+  // whose panel has not landed draws disabled and says so, rather than disappearing. This PoC
+  // ships the proposal, code and tests steps declared and awaiting their panels (POC-02).
+  "steps": [
+    {
+      "key": "proposal",
+      "title": "Proposal",
+      "asserts": "the branch declares its change, and the declaration is worth reviewing"
+    },
+    {
+      "key": "code",
+      "title": "Code",
+      "asserts": "the diff is read as a diff, and what it touches is what was declared"
+    },
+    {
+      "key": "tests",
+      "title": "Tests",
+      "asserts": "the declared gates ran here, and their exit codes say so"
+    }
+  ]
+}

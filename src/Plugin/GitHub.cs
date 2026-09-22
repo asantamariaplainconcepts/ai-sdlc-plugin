@@ -5,7 +5,7 @@ namespace AiSdlc;
 // opaque failure — gh unauthenticated is named, not folded into "no pull request" (#235).
 public sealed class GitHub
 {
-    public sealed record IssueRead(int Number, string State, string Title, string Body, bool Truncated);
+    public sealed record IssueRead(int Number, string State, string Title, string Body, bool Truncated, IReadOnlyList<string> Labels);
 
     private readonly Func<string?> token;
     private readonly Func<string?, string?, Task<Facts.PullRequestAnswer>> pullRequest;
@@ -75,7 +75,7 @@ public sealed class GitHub
         var parts = repo.Split('/');
         var found = await Client(token).Issue.Get(parts[0], parts[1], number);
         // GitHub's REST body is whole; truncation is a mirror-only fact, carried for parity.
-        return new(found.Number, found.State.StringValue, found.Title, found.Body ?? "", false);
+        return new(found.Number, found.State.StringValue, found.Title, found.Body ?? "", false, [.. found.Labels.Select(l => l.Name)]);
     }
 
     private static Octokit.GitHubClient Client(string token) =>

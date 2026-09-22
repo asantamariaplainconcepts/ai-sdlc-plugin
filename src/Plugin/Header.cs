@@ -54,7 +54,7 @@ public sealed class Header
             }
         }
 
-        var commands = Commands.Read(FindCommandsJson(cwd));
+        var commands = Commands.Read(ReviewSteps.FindDeclared(cwd, "commands.json"));
         var gates = commands.Gates.Select(g => g.Name).ToList();
         // POC-00 records no outcomes; the checks fact reads over the declared set alone.
         var outcomes = new List<(string Name, Facts.CheckOutcome Outcome)>();
@@ -65,20 +65,6 @@ public sealed class Header
             await this.github.PullRequestFor(branch, repo), PrPending: false, issueKey, issueTitle, issueState));
 
         return new HeaderReading(cwd, branch, null, facts);
-    }
-
-    // The nearest .harness/commands.json from the worktree up: a worktree offers its own branch's list.
-    private static string FindCommandsJson(string cwd)
-    {
-        for (var dir = (DirectoryInfo?)new DirectoryInfo(cwd); dir is not null; dir = dir.Parent)
-        {
-            if (File.Exists(Path.Join(dir.FullName, ".harness", "commands.json")))
-            {
-                return Path.Join(dir.FullName, ".harness", "commands.json");
-            }
-        }
-
-        return Path.Join(cwd, ".harness", "commands.json");
     }
 }
 

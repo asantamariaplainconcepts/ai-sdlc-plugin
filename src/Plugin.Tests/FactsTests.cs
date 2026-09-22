@@ -242,7 +242,7 @@ public class FactsTests
         var github = new GitHub(
             tokenSource: () => "token",
             pullRequestSource: (b, r) => Task.FromResult(Subjects.NoPullRequest),
-            issueSource: (n, r) => Task.FromResult(new GitHub.IssueRead(1, "Open", "the epic", Subjects.EpicSeamBody, false)));
+            issueSource: (n, r) => Task.FromResult(new GitHub.IssueRead(1, "Open", "the epic", Subjects.EpicSeamBody, false, [])));
 
         var reading = await new Header(git, github).Read("/tmp/repo");
         var facts = reading.Facts.ToDictionary(f => f.Key);
@@ -273,7 +273,7 @@ public class FactsTests
         var github = new GitHub(
             tokenSource: () => "token",
             pullRequestSource: (b, r) => Task.FromResult(Subjects.NoPullRequest),
-            issueSource: (n, r) => Task.FromResult(new GitHub.IssueRead(1, "Open", "the epic", Subjects.EpicSeamBody, false)));
+            issueSource: (n, r) => Task.FromResult(new GitHub.IssueRead(1, "Open", "the epic", Subjects.EpicSeamBody, false, [])));
 
         var reading = await new Header(git, github).Read("/tmp/repo");
         var fact = reading.Facts.Single(f => f.Key == "seam");

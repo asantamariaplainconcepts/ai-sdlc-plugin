@@ -1,12 +1,13 @@
+import { Check } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 /**
- * One screen: the header of a change and a step rail placeholder.
+ * One screen: the header of a change and the rail of its declared review steps.
  *
  * The header states the eight facts of the worktree it reads, each absence named with its
  * remedy: null is not zero, "could not be asked" is not "there is none", and no fact is ever
- * a tick. The rail below is POC-01's — drawn here as a placeholder that says so, rather than
- * disappearing or pretending to be empty.
+ * a tick. The rail below is the review steps as declared data — .harness/review.json decides
+ * what draws, and a worktree offers its own branch's steps rather than the checkout's.
  */
 
 type Fact = {
@@ -23,38 +24,58 @@ type Header = {
   facts: Fact[];
 };
 
+type Step = {
+  key: string;
+  title: string;
+  asserts: string;
+  implemented: boolean;
+  marked: boolean;
+};
+
+/** The reading the rail draws itself from: declared steps, their marks' availability, the problem if any. */
+type Steps = {
+  path: string;
+  steps: Step[];
+  problem: string | null;
+  marksNotAsked: string | null;
+  issueKey: string | null;
+  issueTitle: string | null;
+};
+
 const ink = {
   plain: "var(--muted-foreground)",
   warn: "var(--warn)",
   bad: "var(--bad)",
 } as const;
 
-const steps = [
-  { id: "proposal", label: "Proposal" },
-  { id: "code", label: "Code" },
-  { id: "tests", label: "Tests" },
-] as const;
-
 export function App() {
   const [path, setPath] = useState(new URLSearchParams(window.location.search).get("path") ?? ".");
   const [reading, setReading] = useState<Header | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<string>("proposal");
+  const [stepped, setStepped] = useState<Steps | null>(null);
+  const [step, setStep] = useState<string | null>(null);
 
   const read = useCallback(async (target: string) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/header?path=${encodeURIComponent(target)}`);
-      if (!response.ok) {
-        throw new Error(`the server said ${response.status}`);
+      const [headerResponse, stepsResponse] = await Promise.all([
+        fetch(`/api/header?path=${encodeURIComponent(target)}`),
+        fetch(`/api/steps?path=${encodeURIComponent(target)}`),
+      ]);
+      if (!headerResponse.ok) {
+        throw new Error(`the server said ${headerResponse.status}`);
       }
-      const body = (await response.json()) as Header;
-      setReading(body);
+      setReading((await headerResponse.json()) as Header);
+      setStepped(stepsResponse.ok ? (await stepsResponse.json()) as Steps : null);
+      if (!stepsResponse.ok) {
+        setError(`the steps could not be read (the server said ${stepsResponse.status})`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "the header could not be read");
       setReading(null);
+      setStepped(null);
     } finally {
       setLoading(false);
     }
@@ -87,7 +108,7 @@ export function App() {
 
       {error ? (
         <div style={{ padding: 14, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--card)", color: "var(--bad)", fontSize: 13 }}>
-          the header could not be read: {error}
+          the reading could not be made: {error}
         </div>
       ) : null}
 
@@ -116,30 +137,48 @@ export function App() {
         )}
       </div>
 
-      {/* The step rail: a placeholder that names what it is waiting for (POC-01 makes these
-          data from .harness/review.json) rather than vanishing or faking emptiness. */}
-      <div role="group" aria-label="The steps of a review" style={{ flex: "none", display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {steps.map((entry, index) => (
+      {/* The step rail, drawn from the declaration: numbered boxes in declared order, tick from
+          the issue's reviewed:<key> labels (read only), disabled with words when the panel this
+          build would open does not exist. Changing .harness/review.json changes this rail. */}
+      <div role="group" aria-label="The steps of a review" style={{ flex: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+        {stepped?.steps.map((entry, index) => (
           <button
-            key={entry.id}
+            key={entry.key}
             type="button"
-            aria-pressed={entry.id === step}
-            disabled
-            title="steps arrive with POC-01, read from .harness/review.json"
-            onClick={() => setStep(entry.id)}
-            style={{ flex: "1 1 180px", minWidth: 0, display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", textAlign: "left", border: `1px solid ${entry.id === step ? "var(--primary)" : "var(--border)"}`, borderRadius: "var(--radius)", background: "var(--card)", color: "var(--muted-foreground)", cursor: "default", fontSize: 13, fontWeight: 600 }}
+            aria-pressed={entry.key === step}
+            disabled={!entry.implemented}
+            title={entry.implemented ? entry.asserts : `${entry.asserts}\nnot implemented in this build (POC-02 and later)`}
+            onClick={() => setStep(entry.key)}
+            style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", textAlign: "left", border: `1px solid ${entry.key === step ? "var(--primary)" : "var(--border)"}`, borderRadius: "var(--radius)", background: "var(--card)", color: entry.implemented ? "var(--foreground)" : "var(--muted-foreground)", fontSize: 13, fontWeight: 600 }}
           >
-            <span aria-hidden style={{ width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: "var(--muted)", fontSize: 11 }}>{index}</span>
-            {entry.label}
+            <span aria-hidden style={{ width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", background: "var(--muted)", fontSize: 11 }}>{index + 1}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>{entry.title}</span>
+            {!entry.implemented ? (
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--muted-foreground)" }}>not implemented</span>
+            ) : entry.marked ? (
+              <span title="marked by a reviewed:<key> label on the resolved issue" style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--muted-foreground)" }}><Check size={14} aria-label="the issue carries this step's reviewed label" /> marked</span>
+            ) : null}
           </button>
         ))}
+        {stepped?.problem ? (
+          <div role="note" style={{ padding: 14, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--card)", color: ink.warn, fontSize: 13 }}>{stepped.problem}</div>
+        ) : null}
+        {stepped && !stepped.problem && stepped.marksNotAsked ? (
+          <div role="note" style={{ padding: 14, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--card)", color: ink.plain, fontSize: 13 }}>{stepped.marksNotAsked}</div>
+        ) : null}
       </div>
 
       {/* The panel: one step at a time. Each later step is one panel component file, mounted here
           in exactly one line. */}
       <div style={{ flex: 1, minHeight: 120, padding: 14, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--card)", fontSize: 13, color: "var(--muted-foreground)" }}>
-        The steps are not implemented yet — they arrive as declared data in POC-01, and each panel
-        lands as its own component file mounted in one line above.
+        {stepped?.steps.find((s) => s.key === step && s.implemented) ? (
+          <p style={{ margin: 0 }}>the panel for this step lands with POC-02</p>
+        ) : (
+          <>
+            <p style={{ margin: "0 0 6px" }}>The steps are not implemented yet — they arrive as declared data in POC-01, and each panel</p>
+            <p style={{ margin: 0 }}>lands as its own component file mounted in one line above.</p>
+          </>
+        )}
       </div>
     </div>
   );
