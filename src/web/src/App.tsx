@@ -1,5 +1,7 @@
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { CodeStep } from "./steps/CodeStep";
+import { ProposalStep } from "./steps/ProposalStep";
 
 /**
  * One screen: the header of a change and the rail of its declared review steps.
@@ -168,11 +170,11 @@ export function App() {
         ) : null}
       </div>
 
-      {/* The panel: one step at a time. Each later step is one panel component file, mounted here
-          in exactly one line. */}
-      <div style={{ flex: 1, minHeight: 120, padding: 14, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--card)", fontSize: 13, color: "var(--muted-foreground)" }}>
+      {/* The panel: one step at a time. Each step is one panel component file, mounted here in
+          exactly one branch. */}
+      <div style={{ flex: 1, minHeight: 120, padding: 14, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--card)", fontSize: 13, color: "var(--muted-foreground)", overflow: "auto" }}>
         {stepped?.steps.find((s) => s.key === step && s.implemented) ? (
-          <p style={{ margin: 0 }}>the panel for this step lands with POC-02</p>
+          step === "proposal" ? <ProposalStep path={path} /> : step === "code" ? <CodeStep path={path} /> : null
         ) : (
           <>
             <p style={{ margin: "0 0 6px" }}>The steps are not implemented yet — they arrive as declared data in POC-01, and each panel</p>
