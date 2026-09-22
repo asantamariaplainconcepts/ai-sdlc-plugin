@@ -12,7 +12,7 @@ public static class ReviewSteps
     // Which step keys have panels in this build (POC-02 lands the first two, POC-03 the tests
     // panel). The declared file is the source of what draws; this set is the source of what opens.
     // A declared key outside it draws disabled, named.
-    public static readonly IReadOnlySet<string> KnownImplemented = new HashSet<string>(["proposal", "code", "tests"], StringComparer.OrdinalIgnoreCase);
+    public static readonly IReadOnlySet<string> KnownImplemented = new HashSet<string>(["proposal", "code", "tests", "evidence"], StringComparer.OrdinalIgnoreCase);
 
     private static readonly System.Text.Json.JsonSerializerOptions Options = new()
     {

@@ -1,6 +1,7 @@
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { CodeStep } from "./steps/CodeStep";
+import { EvidenceStep } from "./steps/EvidenceStep";
 import { ProposalStep } from "./steps/ProposalStep";
 import { TestsStep } from "./steps/TestsStep";
 
@@ -176,7 +177,7 @@ export function App() {
           exactly one branch. */}
       <div style={{ flex: 1, minHeight: 120, padding: 14, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--card)", fontSize: 13, color: "var(--muted-foreground)", overflow: "auto" }}>
         {stepped?.steps.find((s) => s.key === step && s.implemented) ? (
-          step === "proposal" ? <ProposalStep path={path} /> : step === "code" ? <CodeStep path={path} /> : step === "tests" ? <TestsStep path={path} hasPrompt={Boolean(stepped?.prompts?.includes(step))} /> : null
+          step === "proposal" ? <ProposalStep path={path} /> : step === "code" ? <CodeStep path={path} /> : step === "tests" ? <TestsStep path={path} hasPrompt={Boolean(stepped?.prompts?.includes(step))} /> : step === "evidence" ? <EvidenceStep path={path} /> : null
         ) : (
           <>
             <p style={{ margin: "0 0 6px" }}>The steps are not implemented yet — they arrive as declared data in POC-01, and each panel</p>

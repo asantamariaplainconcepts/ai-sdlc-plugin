@@ -118,6 +118,26 @@ public class ReviewStepsTests
         read.Steps.Single().Asserts.ShouldBe("first declaration wins");
     }
 
+    [Fact]
+    public void The_evidence_step_is_declared_and_opened_by_this_build()
+    {
+        var path = Write("""
+            { "steps": [
+              { "key": "tests", "title": "Tests", "asserts": "the declared gates ran" },
+              { "key": "evidence", "title": "Evidence", "asserts": "the runs say what happened" },
+            ] }
+            """);
+
+        var read = ReviewSteps.Read(path);
+
+        read.Steps.Select(s => s.Key).ShouldBe(["tests", "evidence"]);
+        // the set this build opens is what turns a rail entry enabled; evidence joined it (POC-06)
+        ReviewSteps.KnownImplemented.Contains("evidence").ShouldBeTrue();
+        ReviewSteps.KnownImplemented.Contains("tests").ShouldBeTrue();
+        // a key no build implements stays closed — the negative anchor for the positive above
+        ReviewSteps.KnownImplemented.Contains("app").ShouldBeFalse();
+    }
+
     // --------------------------------------------------- marks, read from the provider
 
     [Fact]

@@ -31,6 +31,11 @@
       "key": "tests",
       "title": "Tests",
       "asserts": "the declared gates ran here, and their exit codes say so"
+    },
+    {
+      "key": "evidence",
+      "title": "Evidence",
+      "asserts": "the runs recorded against this worktree say what happened, and their exits and costs are on the table"
     }
   ],
   // Which prompt a run of a step is launched with, declared like the steps themselves: a step
