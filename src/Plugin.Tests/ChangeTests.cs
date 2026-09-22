@@ -101,8 +101,7 @@ public class ChangeTests
         discovery.Changes.ShouldBeEmpty();
     }
 
-    // ------------------------------------------------ artifact reads, bounded
-
+    // ------------------------------------------------ artifact reads, confined
     [Fact]
     public void An_artifact_reads_its_text()
     {
@@ -138,6 +137,102 @@ public class ChangeTests
         read.Text.ShouldBeNull();
         read.Problem.ShouldNotBeNull();
         read.Problem.ShouldContain("over the");
+    }
+
+    // ------------------------------------------ artifact reads, confined (F1)
+
+    [Fact]
+    public void A_listed_artifact_reads_through_the_confined_read()
+    {
+        var root = Root();
+        Write(ChangeDir(root, "poc-99"), "proposal.md", "# the proposal\n");
+
+        var read = Change.ReadListedArtifact(root, Path.Join("openspec", "changes", "poc-99", "proposal.md"));
+
+        // The positive anchor: confinement refuses nothing it used to serve.
+        read.Path.ShouldNotBeNull();
+        read.Text.ShouldNotBeNull();
+        read.Text!.ShouldContain("# the proposal");
+        read.Problem.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("../../../../../etc/passwd")]
+    [InlineData("../../../../etc/passwd")]
+    [InlineData("../../..")]
+    public void A_climbing_path_is_refused(string file)
+    {
+        var root = Root();
+        // The escape target exists, outside the worktree: the point is it is never read.
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(root, "..", "outside.md"))!);
+        File.WriteAllText(Path.Combine(root, "..", "outside.md"), "secret\n");
+
+        var read = Change.ReadListedArtifact(root, file);
+
+        read.Path.ShouldBeNull();
+        read.Text.ShouldBeNull();
+        read.Problem.ShouldNotBeNull();
+        read.Problem.ShouldNotContain("secret");
+    }
+
+    [Theory]
+    [InlineData("/etc/passwd")]
+    public void An_absolute_path_is_refused(string file)
+    {
+        var root = Root();
+
+        var read = Change.ReadListedArtifact(root, file);
+
+        read.Path.ShouldBeNull();
+        read.Text.ShouldBeNull();
+        read.Problem.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void A_relative_path_outside_the_listed_change_roots_is_refused()
+    {
+        var root = Root();
+        Write(ChangeDir(root, "poc-99"), "proposal.md", "the change\n");
+
+        // Valid markdown, but under no change root the discovery listed: refused by name —
+        // "not what the listing returned" is a different answer from "there is no change".
+        Write(root, "loose.md", "loose\n");
+
+        var read = Change.ReadListedArtifact(root, "loose.md");
+
+        read.Path.ShouldBeNull();
+        read.Text.ShouldBeNull();
+        read.Problem.ShouldNotBeNull();
+        read.Problem!.ShouldContain("listing returned");
+    }
+
+    [Fact]
+    public void A_worktree_with_no_changes_serves_its_absence_through_the_confined_read()
+    {
+        var root = Root();
+
+        var read = Change.ReadListedArtifact(root, Path.Join("openspec", "changes", "any", "proposal.md"));
+
+        read.Path.ShouldBeNull();
+        read.Problem.ShouldNotBeNull();
+        read.Problem!.ShouldContain("no change declared");
+    }
+
+    [Fact]
+    public void An_escaped_path_over_a_real_change_still_refuses()
+    {
+        // Mutation-proof companion: the climb is refused even when a real change exists and the
+        // resolved escape lands inside the worktree's parent — not vacuous, not readable.
+        var root = Root();
+        Write(ChangeDir(root, "poc-99"), "proposal.md", "the change\n");
+        var outside = Path.Combine(root, "..", "escaped.md");
+        File.WriteAllText(outside, "secret\n");
+
+        var read = Change.ReadListedArtifact(root, "../escaped.md");
+
+        read.Path.ShouldBeNull();
+        read.Problem.ShouldNotBeNull();
+        read.Problem.ShouldNotContain("secret");
     }
 
     // ------------------------------------- mutation proof: the absence is real

@@ -100,19 +100,28 @@ app.MapGet("/api/proposal", (string? path) =>
         problem = (string?)null,
         root = discovery.Root,
         changes = discovery.Changes.Select(c => new { name = c.Name, path = c.Path,
-            artifacts = c.Artifacts.Select(a => new { name = a.Name, path = a.Path }) }),
+            artifacts = c.Artifacts.Select(a => new { name = a.Name, path = a.Path, relative = Path.GetRelativePath(cwd, a.Path) }) }),
     });
 });
 
+// An artifact is read only inside the change roots the proposal discovery already listed: the
+// caller names the worktree and a path under it, and the confined read refuses an absolute
+// path, a `..` climb, or a symlink that grounds outside a listed root — never read, said.
 app.MapGet("/api/artifact", (string? path, string? file) =>
 {
-    if (string.IsNullOrWhiteSpace(file))
+    if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(file))
     {
-        return Results.BadRequest(new { problem = "name the artifact file to read (?file=)" });
+        return Results.BadRequest(new { problem = "name the worktree (?path=) and the artifact path under it (?file=)" });
     }
 
-    var read = Change.ReadArtifact(Path.GetFullPath(file));
-    return Results.Ok(new { path = read.Path, text = read.Text, problem = read.Problem });
+    var read = Change.ReadListedArtifact(Path.GetFullPath(path), file);
+    // The refusal marker: a confined read that names no path read nothing — a 400-style problem
+    // response naming the refusal, the same DTO shape the endpoint's other problems use.
+    return read.Refused
+        ? Results.BadRequest(new { problem = read.Problem })
+        : read.Problem is not null
+            ? Results.Ok(new { path = (string?)null, text = (string?)null, problem = read.Problem })
+            : Results.Ok(new { path = read.Path, text = read.Text, problem = (string?)null });
 });
 
 // The change as a diff: parsed to files, hunks and clasped lines, capped at two hundred presented
