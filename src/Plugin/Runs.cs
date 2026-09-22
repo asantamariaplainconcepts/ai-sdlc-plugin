@@ -10,10 +10,12 @@ public sealed class Runs(Git git, Store store)
     public LaunchOutcome LaunchAndRecord(string cwd, string step, string trigger = "button")
     {
         // The closed vocabulary is a declaration checked, not guessed — an unknown trigger is
-        // refused before anything is minted, the same discipline a declared file gets.
+        // refused before anything is minted, the same discipline a declared file gets. The
+        // refused row carries no trigger: the column stays button/poll/not-said, and the
+        // problem sentence is where the refused value is named.
         if (!Triggers.Known(trigger))
         {
-            return this.Refused(cwd, step, Guid.NewGuid().ToString(), DateTimeOffset.UtcNow.ToString("o"), Triggers.Refusal(trigger), trigger);
+            return this.Refused(cwd, step, Guid.NewGuid().ToString(), DateTimeOffset.UtcNow.ToString("o"), Triggers.Refusal(trigger), null);
         }
 
         var declared = ReviewSteps.Read(ReviewSteps.FindDeclared(cwd, "review.json"));
@@ -52,7 +54,7 @@ public sealed class Runs(Git git, Store store)
     // Refused: the launch never happened, and the row says why rather than pretending a run did.
     // The trigger rides even a refused row — a refused poller run and a refused button run are
     // still rows of the same two contracts.
-    private LaunchOutcome Refused(string cwd, string step, string sessionId, string startedAt, string why, string trigger) =>
+    private LaunchOutcome Refused(string cwd, string step, string sessionId, string startedAt, string why, string? trigger) =>
         new(new RunRow(sessionId, Path.GetFullPath(cwd), step, null, null, startedAt, null, null, null, null, null, null, null, false, null, null, why, trigger), 0, why);
 
     public IReadOnlyList<RunRow> List(string cwd) => store.ListRuns(Path.GetFullPath(cwd));

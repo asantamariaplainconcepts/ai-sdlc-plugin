@@ -117,6 +117,23 @@ public class WatcherTests
         Triggers.Refusal("webhook").ShouldBe("unknown trigger \"webhook\" — say button or poll");
     }
 
+    // 2.2 The refused row carries no trigger — the column stays button/poll/not-said; the
+    // refused value is named in the problem, never stored.
+    [Fact]
+    public void An_unknown_trigger_is_refused_and_records_no_trigger()
+    {
+        var db = Path.Combine(Path.GetTempPath(), "ai-sdlc-tests", $"{Guid.NewGuid():N}.db");
+        using var store = new Store(db);
+        var runs = new Runs(new Git(), store);
+        var refused = runs.LaunchAndRecord("/tmp/not-a-repository", "tests", "webhook");
+        refused.Problem.ShouldBe(Triggers.Refusal("webhook"));
+        refused.Row.Trigger.ShouldBeNull();
+        // The positive anchor: a trigger the vocabulary knows is NOT refused on that ground.
+        var button = runs.LaunchAndRecord("/tmp/not-a-repository", "tests", "button");
+        button.Problem.ShouldNotBe(Triggers.Refusal("button"));
+        store.ListRuns("/tmp/not-a-repository").ShouldBeEmpty();
+    }
+
     // 3.1 The config: off by default, 300 seconds, no paths — each default provable.
     [Fact]
     public void Watcher_config_defaults_off_five_minutes_no_paths()
