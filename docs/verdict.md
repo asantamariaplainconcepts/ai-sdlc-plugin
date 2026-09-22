@@ -17,7 +17,7 @@ perl cloc <tree>/src/Plugin --include-lang="C#"        # backend: hand-written C
 perl cloc <tree>/src/web/src                            # frontend: TypeScript + CSS code lines
 ```
 
-`src/Plugin` at every cut contains only `*.cs` + `*.csproj` (cloc's MSBuild row is the csproj, excluded by the C# filter and by the epic's definition; the JSON/XML/text rows in a full run are `obj/` build artifacts, absent in a clean checkout — confirmed against the per-cut worktrees).
+`src/Plugin` at every cut is hand-written `*.cs` plus the `*.csproj` (cloc's MSBuild row, excluded by the C# filter and by the epic's definition). A full cloc run also shows JSON/XML/Text rows — those are `obj/` build artifacts, present whenever a worktree has been built (cloc's `C# Generated` row is the same story: `.AssemblyInfo.cs` and friends under `obj/`). The honest measure names its rule: **exclude `bin/`/`obj/` explicitly** and count hand-written C# only. POC-06 was first measured at 1450 in a worktree that had been built — its `+19` was `obj/`'s two generated files, not code; the clean number is 1431, corrected in the table below.
 
 | Cut (archive SHA) | Backend (C#) | Δ this cut | Frontend (TS/CSS) | Backend budget (epic) | Cumulative column (epic) |
 |---|---|---|---|---|---|
@@ -27,18 +27,18 @@ perl cloc <tree>/src/web/src                            # frontend: TypeScript +
 | POC-03 · agent (e656294) | **1119** | +224 | 503 | ≤300 | 1100 |
 | POC-04 · gates (8f3c7ca) | **1338** | +219 | 585 | ≤350 | 1450 |
 | POC-05 · triggers (939078b) | **1431** | +93 | 589 | ≤150 | 1600 |
-| POC-06 · verdict (this cut) | **1450** | +19 | 655 | ≤150 ("host, arranque y estático") | ~1750 |
-| **Total (POC-06)** | **1450** | | **655** | | |
+| POC-06 · verdict (this cut) | **1431** | +0 | 655 | ≤150 ("host, arranque y estático") | ~1750 |
+| **Total (POC-06)** | **1431** | | **655** | | |
 
 **Read against the epic's budget table (backend):**
 
-- **Final total: 1.450 C# against the ~1.750 ceiling — under, with 300 lines of margin** (17 %), counting the C# the epic's own definition points at (`src/Plugin`, hand-written code).
-- Counted instead as `src/Plugin` + `src/web/src` together (both trees the epic names), the total is **1.450 + 655 = 2.105** — *over* the 1.750 column. The epic's table is a backend budget with a separate frontend ceiling (≤1.200 TSX), so the honest reading is the split one: backend 1.450 ≤ ~1.750 **and** frontend 655 ≤ 1.200. Both hold.
+- **Final total: 1.431 C# against the ~1.750 ceiling — under, with 319 lines of margin** (18 %), counting the C# the epic's own definition points at (`src/Plugin`, hand-written code, `bin/`/`obj/` excluded). The row was first recorded as 1450 (+19, measured through `obj/` after a build — see the measurement rule above); the correction is the fix-pass's F3, one line, no narrative change.
+- Counted instead as `src/Plugin` + `src/web/src` together (both trees the epic names), the total is **1.431 + 655 = 2.086** — *over* the 1.750 column. The epic's table is a backend budget with a separate frontend ceiling (≤1.200 TSX), so the honest reading is the split one: backend 1.431 ≤ ~1.750 **and** frontend 655 ≤ 1.200. Both hold.
 - **Per-cut overruns, reported honestly:**
   - POC-00: 508 against ≤400 — **+108 over**. The header alone, the cheapest part, overshot its box in the same sitting that established the method (recorded then as "over budget, 108").
   - POC-01: 599 cumulative against the 550 cumulative column — **49 over cumulative**, though the cut itself added +91 ≤ 150. The cumulative columns assume a 400-line POC-00; a first-cut overrun compounds through every column after it.
   - POC-02: +296 against ≤250 — **+46 over** the cut, recorded as debt in that change's own tasks (two spec-mandated panels; the trim available would have mangled a working layout).
-  - POC-03: +224 ≤ 300 ✓; POC-04: +219 ≤ 350 ✓ (but cumulative 1.338 was under the 1.450 column only because POO-01's cumulative arithmetic reset); POC-05: +93 ≤ 150 ✓; POC-06: +19 ≤ 150 ✓.
+  - POC-03: +224 ≤ 300 ✓; POC-04: +219 ≤ 350 ✓ (but cumulative 1.338 was under the 1.450 column only because POO-01's cumulative arithmetic reset); POC-05: +93 ≤ 150 ✓; POC-06: +0 (the cut added docs and panel only — first recorded +19 over `obj/`'s generated files, corrected in the fix pass) ✓.
 - **Two consecutive budget overruns?** POC-00 (+108) and POC-02 (+46) are over their per-cut caps, but they are **not consecutive** — POC-01 (+91), POC-03, POC-04, POC-05, POC-06 all sat inside their per-cut allocations. The one cumulative-column breach that persisted (550 → 599) is the arithmetic shadow of POC-00, not new spending. On the epic's own criterion — *dos presupuestos seguidos* — the death signal did not fire. Silver lining without rounding: the *form* held after the first two cuts; every cut from POC-03 onward landed under its box.
 
 ---
@@ -59,7 +59,7 @@ Reference (read-only worktree): `harness-837c7ca/src/frontend/features/folders/{
 | 7 | **Working tree (uncommitted)** | `facts.ts:289-293`: clean → phrase; else the probe's own sentence "`N` uncommitted" (`Dirty.cs:16-18`), warn | `Facts.cs:93`: `"tree clean"` / `$"{n} uncommitted"`, warn; counted from `git status --porcelain` (`Git.cs:87`) | **matches** |
 | 8 | **Null ≠ zero, no fact a tick** | `facts.ts:17-37`: docblock contract "nothing here is ever a tick", no success tone; two families + default | `Facts.cs:5,29-30`: `Tone {Plain, Warn, Bad}`, same absence discipline per fact above | **matches** — same tone vocabulary, same no-success-tone |
 
-**Summary:** 7 of 8 **match** (PR, changed(with a pending-difference exercised only by construction), merge/base absences, seam, tree, tone vocabulary; checks minus one named tone). 2 named differences, both recorded when they landed: the never-ran checks tone (POC-05, deliberate) and the absence sentences carrying remedies (PoC style throughout). The PoC's extra ninth fact (resolved issue) is the PoC drawing a fact the harness reads elsewhere — the epic's own spec listed eight facts with the issue as context, so this is plus-one, not a mismatch. **The header is alive: 1.450 lines, eight-eights on semantics.** (POC-00's own check ran the two-subject comparison against the reference worktree; the table above is the written record of that cut's live finding plus the three cuts since.)
+**Summary:** 7 of 8 **match** (PR, changed(with a pending-difference exercised only by construction), merge/base absences, seam, tree, tone vocabulary; checks minus one named tone). 2 named differences, both recorded when they landed: the never-ran checks tone (POC-05, deliberate) and the absence sentences carrying remedies (PoC style throughout). The PoC's extra ninth fact (resolved issue) is the PoC drawing a fact the harness reads elsewhere — the epic's own spec listed eight facts with the issue as context, so this is plus-one, not a mismatch. **The header is alive: 1.431 lines, eight-eights on semantics.** (POC-00's own check ran the two-subject comparison against the reference worktree; the table above is the written record of that cut's live finding plus the three cuts since.)
 
 ---
 
@@ -79,7 +79,7 @@ The epic's second death criterion: *for the step of gates to tell the truth, it 
 
 **Alive.** The numbers, without rounding:
 
-1. Backend 1.450 C# (epic definition: `src/Plugin`, cloc code lines) against the ~1.75 0 line — **under by 300**; frontend 655 against ≤1.200 — **under by 545**. Combined 2.105 against 1.750 — over, but the epic budgets them apart, and both parts hold their own ceilings.
+1. Backend 1.431 C# (epic definition: `src/Plugin`, cloc code lines, `bin/`/`obj/` excluded) against the ~1.750 line — **under by 319**; frontend 655 against ≤1.200 — **under by 545**. Combined 2.086 against 1.750 — over, but the epic budgets them apart, and both parts hold their own ceilings.
 2. The header holds at ≤400? No — POC-00 shipped 508, +108 over, and this is reported as the breach it was, not amortized. But the criterion's own framing — "si esa se desmadra, lo fino no era fino" — reads the header as the *cheap* part that must not explode: 508 lines including the Seam port (`Seam.cs`, 121) is not desmadre, it is 27 % over a box drawn before the seam's cost was known; the epic had pre-authorized 7-of-8 without it.
 3. Gates truthful without leases/reconciliation/identity: **yes, by construction** (section 4).
 4. Two consecutive budget overruns: **no** — POC-00 over, POC-01 in, POC-02 over, everything after in. Non-consecutive. Cumulative columns sat breached from POC-01 onward, but that is POC-00's arithmetic shadow, spent once.
@@ -87,7 +87,7 @@ The epic's second death criterion: *for the step of gates to tell the truth, it 
 
 **What happens in this branch (alive):**
 
-- **Permission to thin is granted by the numbers above** — the cycle as built (header + three panels + launch/record + gates + two triggers + evidence, 1.450) fits the box the epic drew.
+- **Permission to thin is granted by the numbers above** — the cycle as built (header + three panels + launch/record + gates + two triggers + evidence, 1.431) fits the box the epic drew.
 - **Order, as the epic fixes it:**
   1. **Repeat the pattern for the fifth step** (The app — in harness terms, `ChangeTab`'s fifth panel): the Evidence timing says a read-only panel over an existing contract costs minutes; the first write-facing panel is where that number must be re-measured, not assumed.
   2. **Decide substrate: ACP before herdr.** The epic's own order, restated with this PoC's evidence behind it: the launch contract is one seam (`Runs.LaunchAndRecord`, one caller surface, two triggers through it, `Runs.cs:15-70`), which is exactly the shape an ACP client slots into — same contract, different transport. herdr's yield (survival, locked state, multi-machine) remains the answer to the question this PoC explicitly did not ask (in-progress accompaniment, restart survival).
