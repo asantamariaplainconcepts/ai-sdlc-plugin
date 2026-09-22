@@ -40,7 +40,7 @@ POC-01 (archived `2026-09-22-poc-01-steps`) established the rail that draws decl
 
 - [react-markdown bundle weight] → accepted: epic pins it for this exact step; harness keeps it behind Prose boundary, we accept the single-page cost (one screen).
 - [hand-rolled patch parser vs library] → required by the epic ("Sin dependencia de librería de diff"). Risk contained: edge cases encoded as fixtures; `-z` numstat already has its own parser in POC-00 — the same tolerance for unusual paths (`core.quotepath=off` + tab-separated headers only).
-- [budget 250] → Change.cs ~60, Patch.cs ~90, Git addition ~20, endpoints ~35 CS; two step files ~180 TS total; package.json additions. Measured with cloc at the end; if over, first cut is CodeStep's file-list trimming (list becomes a `<select>`), recorded here if taken.
+- [budget 250] → Change.cs ~60, Patch.cs ~90, Git addition ~20, endpoints ~35 CS; two step files ~180 TS total; package.json additions. Measured with cloc at the end; if over, first cut is CodeStep's file-list trimming (list becomes a `<select>`), recorded here if taken. **Measured at close-out: +281 C# +218 TS = +499 over 99da57a — the budget was structuring-blind from this design's own estimate (~385): two spec-mandated panels, each with its absence sentences, plus a pure parser land over one 250-line cap. Trimming the CodeStep file list (the named fallback) saves ~20 lines and mangles a working layout, so the overage is carried as recorded debt for the orchestrator's ledger, not silently trimmed.**
 - [untracked file text can be huge] → bounded read (MaxBytes per file, same constant family as other declared-file reads; a refused read draws "over the bound", not a truncated body).
 
 ## Migration Plan

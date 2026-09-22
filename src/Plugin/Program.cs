@@ -76,9 +76,10 @@ app.MapGet("/api/steps", async (string? path) =>
 app.MapGet("/api/proposal", (string? path) =>
 {
     var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
-    if (!git.IsRepository(cwd))
+    var problem = NotGit(cwd, git);
+    if (problem is not null)
     {
-        return Results.Ok(new { path = cwd, problem = "not a git repository — point at a directory git describes", root = (string?)null,
+        return Results.Ok(new { path = cwd, problem, root = (string?)null,
             changes = Array.Empty<object>() });
     }
 
@@ -110,9 +111,10 @@ app.MapGet("/api/artifact", (string? path, string? file) =>
 app.MapGet("/api/code", (string? path) =>
 {
     var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
-    if (!git.IsRepository(cwd))
+    var problem = NotGit(cwd, git);
+    if (problem is not null)
     {
-        return Results.Ok(new { path = cwd, problem = "not a git repository — point at a directory git describes", basis = (string?)null,
+        return Results.Ok(new { path = cwd, problem, basis = (string?)null,
             cutAfter = (int?)null, hiddenLinesCount = 0, files = Array.Empty<object>() });
     }
 
@@ -151,6 +153,12 @@ app.MapGet("/api/code", (string? path) =>
 });
 
 static int CountLines(string body) => body.Length == 0 ? 0 : body.Split('\n').Length - (body.EndsWith('\n') ? 1 : 0);
+
+// A directory that is not there cannot be git's working directory: the process would not start.
+// Named before it is asked — a missing path is not a repository, and it is not zero either.
+static string? NotGit(string cwd, Git git) => !Directory.Exists(cwd)
+    ? $"{cwd} is not there — point at a directory that exists"
+    : git.IsRepository(cwd) ? null : "not a git repository — point at a directory git describes";
 
 // One host, no CORS, no base URL: the built frontend is served same-origin from src/web/dist.
 
