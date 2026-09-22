@@ -22,6 +22,7 @@ public static class Patch
         var files = new List<File>();
         string? path = null;
         string? renamedFrom = null;
+        string? oldSide = null;
         var isBinary = false;
         var hunks = new List<Hunk>();
         var lines = new List<Line>();
@@ -39,7 +40,7 @@ public static class Patch
                 files.Add(new File(path, renamedFrom, isBinary, hunks));
             }
 
-            (path, renamedFrom, isBinary) = (null, null, false);
+            (path, renamedFrom, oldSide, isBinary) = (null, null, null, false);
             hunks = [];
         }
 
@@ -77,13 +78,10 @@ public static class Patch
 
             if (line.StartsWith("--- "))
             {
-                // The old side of a rename names the file it came from.
+                // The old side names where the content came from; a rename is only when the
+                // new side names a different file.
                 var old = line[4..].Trim('"');
-                if (old.StartsWith("a/"))
-                {
-                    renamedFrom = old[2..];
-                }
-
+                oldSide = old.StartsWith("a/") ? old[2..] : old;
                 continue;
             }
 
@@ -99,6 +97,9 @@ public static class Patch
                 if (s != "/dev/null")
                 {
                     path = s;
+                    // A rename is old and new sides naming different files — a plain edit
+                    // names itself twice, and /dev/null is the new-file origin, not a file.
+                    renamedFrom = oldSide is not null && oldSide != s && oldSide != "/dev/null" ? oldSide : null;
                 }
 
                 continue;

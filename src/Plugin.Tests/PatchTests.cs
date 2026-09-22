@@ -68,6 +68,55 @@ public class PatchTests
     }
 
     [Fact]
+    public void A_plain_edit_names_itself_twice_and_is_not_a_rename()
+    {
+        var read = Patch.Parse("""
+            diff --git a/a.txt b/a.txt
+            --- a/a.txt
+            +++ b/a.txt
+            @@ -1 +1 @@
+            -old
+            +new
+            """);
+
+        read.Files.Single().RenamedFrom.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_rename_carries_where_the_content_came_from()
+    {
+        var read = Patch.Parse("""
+            diff --git a/old.txt b/new.txt
+            similarity index 95%
+            rename from old.txt
+            rename to new.txt
+            --- a/old.txt
+            +++ b/new.txt
+            @@ -1 +1 @@
+            -same
+            +nearly same
+            """);
+
+        read.Files.Single().Path.ShouldBe("new.txt");
+        read.Files.Single().RenamedFrom.ShouldBe("old.txt");
+    }
+
+    [Fact]
+    public void A_new_file_origin_is_not_a_rename()
+    {
+        var read = Patch.Parse("""
+            diff --git a/a.txt b/a.txt
+            new file mode 100644
+            --- /dev/null
+            +++ b/a.txt
+            @@ -0,0 +1 @@
+            +first
+            """);
+
+        read.Files.Single().RenamedFrom.ShouldBeNull();
+    }
+
+    [Fact]
     public void A_diff_nobody_made_reads_empty()
     {
         var read = Patch.Parse("");
