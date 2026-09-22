@@ -32,5 +32,12 @@
       "title": "Tests",
       "asserts": "the declared gates ran here, and their exit codes say so"
     }
-  ]
+  ],
+  // Which prompt a run of a step is launched with, declared like the steps themselves: a step
+  // absent here has no prompt and says so, rather than being launched with an invented one.
+  // A run is recorded against the commit it started from — exit code, is_error, cost if the
+  // provider gives it, and the transcript by the measured ~/.claude/projects rule.
+  "prompts": {
+    "tests": "Run this repository's declared gate (./gate.sh) from the worktree root, then report in one short paragraph: whether it passed, and the first failing command if it did not. Change nothing."
+  }
 }

@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { CodeStep } from "./steps/CodeStep";
 import { ProposalStep } from "./steps/ProposalStep";
+import { TestsStep } from "./steps/TestsStep";
 
 /**
  * One screen: the header of a change and the rail of its declared review steps.
@@ -42,6 +43,7 @@ type Steps = {
   marksNotAsked: string | null;
   issueKey: string | null;
   issueTitle: string | null;
+  prompts: string[] | null;
 };
 
 const ink = {
@@ -57,6 +59,7 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [stepped, setStepped] = useState<Steps | null>(null);
   const [step, setStep] = useState<string | null>(null);
+  const promptKeys = stepped?.prompts ?? null;
 
   const read = useCallback(async (target: string) => {
     setLoading(true);
@@ -174,7 +177,7 @@ export function App() {
           exactly one branch. */}
       <div style={{ flex: 1, minHeight: 120, padding: 14, borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--card)", fontSize: 13, color: "var(--muted-foreground)", overflow: "auto" }}>
         {stepped?.steps.find((s) => s.key === step && s.implemented) ? (
-          step === "proposal" ? <ProposalStep path={path} /> : step === "code" ? <CodeStep path={path} /> : null
+          step === "proposal" ? <ProposalStep path={path} /> : step === "code" ? <CodeStep path={path} /> : step === "tests" ? <TestsStep path={path} hasPrompt={Boolean(promptKeys?.includes(step))} /> : null
         ) : (
           <>
             <p style={{ margin: "0 0 6px" }}>The steps are not implemented yet — they arrive as declared data in POC-01, and each panel</p>

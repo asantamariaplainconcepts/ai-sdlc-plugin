@@ -9,10 +9,10 @@ public static class ReviewSteps
 
     public const string MarkPrefix = "reviewed:";
 
-    // Which step keys have panels in this build (POC-02 lands the first two). The declared file is
-    // the source of what draws; this set is the source of what opens. A declared key outside
-    // it draws disabled, named.
-    public static readonly IReadOnlySet<string> KnownImplemented = new HashSet<string>(["proposal", "code"], StringComparer.OrdinalIgnoreCase);
+    // Which step keys have panels in this build (POC-02 lands the first two, POC-03 the tests
+    // panel). The declared file is the source of what draws; this set is the source of what opens.
+    // A declared key outside it draws disabled, named.
+    public static readonly IReadOnlySet<string> KnownImplemented = new HashSet<string>(["proposal", "code", "tests"], StringComparer.OrdinalIgnoreCase);
 
     private static readonly System.Text.Json.JsonSerializerOptions Options = new()
     {
@@ -23,13 +23,14 @@ public static class ReviewSteps
 
     public sealed record DeclaredStep(string Key, string Title, string Asserts);
 
-    public sealed record ReadResult(IReadOnlyList<DeclaredStep> Steps, bool Absent, bool Unreadable, string? Problem);
+    /// The review-steps reading plus its prompts map, read in one bounded JSONC pass.
+    public sealed record ReadResult(IReadOnlyList<DeclaredStep> Steps, IReadOnlyDictionary<string, string> Prompts, bool Absent, bool Unreadable, string? Problem);
 
     public static ReadResult Read(string path)
     {
         if (!File.Exists(path))
         {
-            return new([], true, false, $"no review steps declared at {path} — declare them there in a \"steps\" array");
+            return new([], EmptyPrompts, true, false, $"no review steps declared at {path} — declare them there in a \"steps\" array");
         }
 
         try
@@ -37,7 +38,7 @@ public static class ReviewSteps
             var info = new FileInfo(path);
             if (info.Length > MaxBytes)
             {
-                return new([], false, true, $"{path} is {info.Length} bytes, over the {MaxBytes} bound");
+                return new([], EmptyPrompts, false, true, $"{path} is {info.Length} bytes, over the {MaxBytes} bound");
             }
 
             var shape = System.Text.Json.JsonSerializer.Deserialize<Shape>(File.ReadAllText(path), Options);
@@ -47,13 +48,23 @@ public static class ReviewSteps
                 .Select(g => g.First())
                 .Select(s => new DeclaredStep(s!.Key!.Trim(), s.Title!.Trim(), (s.Asserts ?? "").Trim()))
                 .ToList();
-            return new(steps, false, false, shape?.Steps is null ? $"no \"steps\" array in {path}" : null);
+            var prompts = shape?.Prompts is { } map
+                ? new Dictionary<string, string>(map, StringComparer.OrdinalIgnoreCase) as IReadOnlyDictionary<string, string>
+                : EmptyPrompts;
+            return new(steps, prompts, false, false, shape?.Steps is null ? $"no \"steps\" array in {path}" : null);
         }
         catch (Exception e)
         {
-            return new([], false, true, $"{path} could not be parsed: {e.Message}");
+            return new([], EmptyPrompts, false, true, $"{path} could not be parsed: {e.Message}");
         }
     }
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyPrompts = new Dictionary<string, string>();
+
+    /// The prompt a step's run is launched with, from the declared prompts map. An absent map or
+    /// key is its own absence — null, never an invented prompt.
+    public static string? PromptFor(ReadResult declared, string stepKey) =>
+        declared.Prompts.TryGetValue(stepKey, out var prompt) && !string.IsNullOrWhiteSpace(prompt) ? prompt : null;
 
     /// A step is marked where the resolved issue carries its `reviewed:<key>` label — read-only.
     public static bool Marked(string key, IReadOnlyList<string> issueLabels) =>
@@ -80,7 +91,7 @@ public static class ReviewSteps
         return Path.Join(cwd, ".harness", fileName);
     }
 
-    private sealed record Shape(List<Step>? Steps);
+    private sealed record Shape(List<Step>? Steps, Dictionary<string, string>? Prompts);
 
     private sealed record Step(string? Key, string? Title, string? Asserts);
 }

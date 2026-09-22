@@ -8,6 +8,7 @@ var store = new Store(Path.GetFullPath(Path.Combine(app.Environment.ContentRootP
 var header = new Header();
 var git = new Git();
 var github = new GitHub();
+var runs = new Runs(git, store);
 
 app.MapGet("/api/header", async (string? path) =>
 {
@@ -37,6 +38,8 @@ app.MapGet("/api/steps", async (string? path) =>
     var read = ReviewSteps.Read(ReviewSteps.FindDeclared(cwd, "review.json"));
     var branch = git.Branch(cwd);
     var repo = GitHub.RepoPath(git.RemoteUrl(cwd));
+    // The prompt keys ride along so a panel can say "no prompt is declared" before it is asked.
+    var promptKeys = read.Prompts.Keys.ToList();
 
     string? issueKey = null, issueTitle = null, marksNotAsked = null;
     List<string> labels = [];
@@ -67,6 +70,7 @@ app.MapGet("/api/steps", async (string? path) =>
         marksNotAsked,
         issueKey,
         issueTitle,
+        prompts = promptKeys,
     });
 });
 
@@ -151,6 +155,54 @@ app.MapGet("/api/code", (string? path) =>
         }),
     });
 });
+
+// The runs of a worktree, and the launch that makes them: POST launches claude for a declared
+// step's prompt and holds to completion (no streaming — the epic's "no es" list), recording the
+// run against the commit it started from whatever happened. GET lists, most recent first.
+app.MapPost("/api/runs", (string? path, string? step) =>
+{
+    var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
+    var problem = NotGit(cwd, git);
+    if (problem is not null || string.IsNullOrWhiteSpace(step))
+    {
+        return Results.Ok(new { path = cwd, problem = problem ?? "name the step to run (?step=)", run = (object?)null });
+    }
+
+    var outcome = runs.LaunchAndRecord(cwd, step);
+    return Results.Ok(new { path = cwd, problem = outcome.Problem, run = outcome.Row is { ExitCode: null, Prompt: null } r ? RunView(r) : RunView(outcome.Row) });
+});
+
+app.MapGet("/api/runs", (string? path) =>
+{
+    var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
+    var problem = NotGit(cwd, git);
+    if (problem is not null)
+    {
+        return Results.Ok(new { path = cwd, problem, runs = Array.Empty<object>() });
+    }
+
+    return Results.Ok(new { path = cwd, problem = (string?)null, runs = runs.List(cwd).Select(RunView) });
+});
+
+static object RunView(RunRow row) => new
+{
+    sessionId = row.SessionId,
+    step = row.Step,
+    prompt = row.Prompt,
+    startingCommit = row.StartingCommit,
+    startedAt = row.StartedAtIso,
+    finishedAt = row.FinishedAtIso,
+    exitCode = row.ExitCode,
+    isError = row.IsError,
+    // Null is not zero: an absent cost is a sentence about the provider, not a free run.
+    costUsd = row.CostUsd,
+    numTurns = row.NumTurns,
+    durationMs = row.DurationMs,
+    transcriptPath = row.TranscriptPath,
+    transcriptLocated = row.TranscriptLocated,
+    resultSummary = row.ResultSummary,
+    problem = row.Problem,
+};
 
 static int CountLines(string body) => body.Length == 0 ? 0 : body.Split('\n').Length - (body.EndsWith('\n') ? 1 : 0);
 
