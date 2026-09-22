@@ -40,8 +40,14 @@ type Gate = {
 
 const row: React.CSSProperties = { display: "flex", flexWrap: "wrap", columnGap: 10, alignItems: "baseline", fontSize: 12, padding: "6px 0", borderTop: "1px solid var(--border)" };
 
-const readingColor = (reading: Gate["reading"]): string | undefined =>
-  reading === "pass" ? "var(--foreground)" : reading === "fail" ? "var(--bad)" : reading === "inconclusive" ? "var(--warn)" : undefined;
+/** pass = foreground, fail = bad, inconclusive = warn, never ran = warn (silence is failure to
+ *  look, POC-05); missing is colored by the caller — bad, not a reading. */
+const readingColor = (reading: Gate["reading"], missing: boolean): string | undefined =>
+  reading === "pass" ? "var(--foreground)"
+  : reading === null
+    ? missing ? undefined : "var(--warn)"
+    : reading === "fail" ? "var(--bad)"
+    : "var(--warn)";
 
 const readingText = (g: Gate): string =>
   g.missing ? "refuted at declaration" : g.reading === null ? "not run here" : g.reading === "inconclusive" ? "no concluyente" : g.reading;
@@ -84,7 +90,9 @@ export function TestsStep({ path, hasPrompt }: { path: string; hasPrompt: boolea
   const launch = async () => {
     setLaunching(true);
     try {
-      const response = await fetch(`/api/runs?path=${encodeURIComponent(path)}&step=tests`, { method: "POST" });
+      // trigger=button said out loud: the same contract the poller calls with trigger=poll — the
+      // view does not read the value back, the record is where the divergence lives.
+      const response = await fetch(`/api/runs?path=${encodeURIComponent(path)}&step=tests&trigger=button`, { method: "POST" });
       const body = (await response.json()) as { problem: string | null };
       if (body.problem) setProblem(body.problem);
       await list();
@@ -155,7 +163,7 @@ export function TestsStep({ path, hasPrompt }: { path: string; hasPrompt: boolea
       {(gates ?? []).map((g) => (
         <div key={g.key} className="mono" style={row}>
           <span style={{ color: "var(--foreground)", fontWeight: 600 }}>{g.name}</span>
-          <span style={{ color: readingColor(g.reading) ?? (g.missing ? "var(--bad)" : "var(--muted-foreground)") }}>
+          <span style={{ color: readingColor(g.reading, g.missing) ?? (g.missing ? "var(--bad)" : "var(--muted-foreground)") }}>
             {readingText(g)}
             {g.missing ? " — could not run" : ""}
           </span>

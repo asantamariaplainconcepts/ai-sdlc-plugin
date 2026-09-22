@@ -105,7 +105,9 @@ public static class Facts
         var ran = outcomes.Where(o => o.Outcome.ExitCode is not null).ToList();
         if (ran.Count == 0)
         {
-            return new("checks", "checks not run here", Tone.Plain);
+            // POC-05: gates declared but never run is a failure to look, not silence — a run
+            // arriving with empty gates (however triggered) reads as warn, never as quiet.
+            return new("checks", "checks not run here", Tone.Warn);
         }
 
         var failed = ran.Where(o => o.Outcome.ExitCode != 0).ToList();

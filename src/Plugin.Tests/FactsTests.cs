@@ -129,10 +129,14 @@ public class FactsTests
     public void Checks_undeclared_vs_not_run()
     {
         var a = SubjectA().Single(f => f.Key == "checks").Text;
-        var declared = Facts.Header(Input(gates: ["Build"])).Single(f => f.Key == "checks").Text;
+        var declaredFact = Facts.Header(Input(gates: ["Build"])).Single(f => f.Key == "checks");
 
         a.ShouldContain("no checks declared");
-        declared.ShouldBe("checks not run here");
+        declaredFact.Text.ShouldBe("checks not run here");
+        // POC-05: declared-but-never-run is warn — a run with empty gates is a failure to look,
+        // not silence; undeclared stays plain (nothing was asked to run).
+        a.ShouldNotContain("checks not run");
+        declaredFact.Tone.ShouldBe(Facts.Tone.Warn);
     }
 
     [Fact]
