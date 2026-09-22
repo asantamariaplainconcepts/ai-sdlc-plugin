@@ -1,9 +1,8 @@
 namespace AiSdlc;
 
 // One launch contract: resolve the step's declared prompt, mint the session id, pin the commit,
-// run claude to completion, and write the row — whatever happened. POC-05's two triggers call
-// this same function; a run is recorded even when the agent fails, and the row says which of
-// process failure and provider error it was.
+// run claude to completion, and write the row — whatever happened. A run is recorded even when
+// the agent fails, and the row says which of process failure and provider error it was.
 public sealed class Runs(Git git, Store store)
 {
     public sealed record LaunchOutcome(RunRow Row, long Id, string? Problem);
@@ -13,32 +12,26 @@ public sealed class Runs(Git git, Store store)
         var declared = ReviewSteps.Read(ReviewSteps.FindDeclared(cwd, "review.json"));
         var prompt = ReviewSteps.PromptFor(declared, step);
         var sessionId = Guid.NewGuid().ToString();
-        var startedAt = DateTimeOffset.UtcNow;
-
-        // No prompt is a nameable absence, not an invented one — the launch is refused with its
-        // remedy, and no row pretends a run happened.
+        var startedAt = DateTimeOffset.UtcNow.ToString("o");
         if (prompt is null)
         {
-            var why = declared.Problem ?? "no prompt is declared for that step";
-            return new(new RunRow(sessionId, Path.GetFullPath(cwd), step, null, null, startedAt.ToString("o"), null, null, null, null, null, null, null, false, null, null, why), 0, why);
+            return this.Refused(cwd, step, sessionId, startedAt, declared.Problem ?? "no prompt is declared for that step");
         }
 
-        var startingCommit = git.Head(Path.GetFullPath(cwd));
-        var command = ResolveClaude();
-        var launch = command is { } exe
-            ? Agent.Launch(exe, Agent.ClaudeArguments(sessionId, prompt), Path.GetFullPath(cwd))
+        var worktree = Path.GetFullPath(cwd);
+        var exe = ResolveClaude();
+        var launch = exe is { }
+            ? Agent.Launch(exe, Agent.ClaudeArguments(sessionId, prompt), worktree)
             : new Agent.LaunchResult(-1, "", "the claude CLI could not be found — install it or point PATH at it", 0, null);
-
         var facts = Agent.ParseResult(launch.StdOut);
-        var transcript = Agent.Transcript(cwd, sessionId);
-        var finishedAt = DateTimeOffset.UtcNow;
+        var transcript = Agent.Transcript(worktree, sessionId);
         var row = new RunRow(
-            sessionId, Path.GetFullPath(cwd), step, prompt, startingCommit, startedAt.ToString("o"), finishedAt.ToString("o"),
+            sessionId, worktree, step, prompt, git.Head(worktree), startedAt, DateTimeOffset.UtcNow.ToString("o"),
             launch.ExitCode, facts.IsError, facts.CostUsd, facts.NumTurns,
             facts.DurationMs ?? (launch.DurationMs > 0 ? launch.DurationMs : null),
             transcript.Path, transcript.Located,
             facts.ResultSummary is { Length: > 512 } summary ? summary[..512] : facts.ResultSummary,
-            launch.StdErr is { Length: > 0 } err ? (err.Length > 2048 ? err[^2048..] : err) : null,
+            launch.StdErr is { Length: > 0 } err ? err[^Math.Min(err.Length, 2048)..] : null,
             launch.Problem ?? facts.Problem);
         var id = store.RecordRun(row);
         if (launch.StdOut.Length > 0)
@@ -48,6 +41,10 @@ public sealed class Runs(Git git, Store store)
 
         return new(row, id, null);
     }
+
+    // Refused: the launch never happened, and the row says why rather than pretending a run did.
+    private LaunchOutcome Refused(string cwd, string step, string sessionId, string startedAt, string why) =>
+        new(new RunRow(sessionId, Path.GetFullPath(cwd), step, null, null, startedAt, null, null, null, null, null, null, null, false, null, null, why), 0, why);
 
     public IReadOnlyList<RunRow> List(string cwd) => store.ListRuns(Path.GetFullPath(cwd));
 

@@ -156,52 +156,38 @@ app.MapGet("/api/code", (string? path) =>
     });
 });
 
-// The runs of a worktree, and the launch that makes them: POST launches claude for a declared
-// step's prompt and holds to completion (no streaming — the epic's "no es" list), recording the
-// run against the commit it started from whatever happened. GET lists, most recent first.
+// A worktree's runs: POST launches claude for a declared step's prompt and holds to completion
+// (no streaming — the epic's "no es"), recording the run against its starting commit whatever
+// happened; GET lists, most recent first.
 app.MapPost("/api/runs", (string? path, string? step) =>
 {
     var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
-    var problem = NotGit(cwd, git);
-    if (problem is not null || string.IsNullOrWhiteSpace(step))
-    {
-        return Results.Ok(new { path = cwd, problem = problem ?? "name the step to run (?step=)", run = (object?)null });
-    }
-
-    var outcome = runs.LaunchAndRecord(cwd, step);
-    return Results.Ok(new { path = cwd, problem = outcome.Problem, run = outcome.Row is { ExitCode: null, Prompt: null } r ? RunView(r) : RunView(outcome.Row) });
-});
-
-app.MapGet("/api/runs", (string? path) =>
-{
-    var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
-    var problem = NotGit(cwd, git);
+    var problem = NotGit(cwd, git) ?? (string.IsNullOrWhiteSpace(step) ? "name the step to run (?step=)" : null);
     if (problem is not null)
     {
-        return Results.Ok(new { path = cwd, problem, runs = Array.Empty<object>() });
+        return Results.Ok(new { path = cwd, problem, run = (object?)null });
     }
 
-    return Results.Ok(new { path = cwd, problem = (string?)null, runs = runs.List(cwd).Select(RunView) });
+    var outcome = runs.LaunchAndRecord(cwd, step!);
+    return Results.Ok(new { path = cwd, problem = outcome.Problem, run = RunView(outcome.Row) });
 });
 
+app.MapGet("/api/runs", (string? path) =>{
+    var cwd = Path.GetFullPath(path ?? app.Environment.ContentRootPath);
+    var problem = NotGit(cwd, git);
+    return problem is not null
+        ? Results.Ok(new { path = cwd, problem, runs = Array.Empty<object>() })
+        : Results.Ok(new { path = cwd, problem = (string?)null, runs = runs.List(cwd).Select(RunView) });
+});
+
+// Null is not zero: an absent cost is a sentence about the provider, not a free run.
 static object RunView(RunRow row) => new
 {
-    sessionId = row.SessionId,
-    step = row.Step,
-    prompt = row.Prompt,
-    startingCommit = row.StartingCommit,
-    startedAt = row.StartedAtIso,
-    finishedAt = row.FinishedAtIso,
-    exitCode = row.ExitCode,
-    isError = row.IsError,
-    // Null is not zero: an absent cost is a sentence about the provider, not a free run.
-    costUsd = row.CostUsd,
-    numTurns = row.NumTurns,
-    durationMs = row.DurationMs,
-    transcriptPath = row.TranscriptPath,
-    transcriptLocated = row.TranscriptLocated,
-    resultSummary = row.ResultSummary,
-    problem = row.Problem,
+    sessionId = row.SessionId, step = row.Step, prompt = row.Prompt, startingCommit = row.StartingCommit,
+    startedAt = row.StartedAtIso, finishedAt = row.FinishedAtIso, exitCode = row.ExitCode, isError = row.IsError,
+    costUsd = row.CostUsd, numTurns = row.NumTurns, durationMs = row.DurationMs,
+    transcriptPath = row.TranscriptPath, transcriptLocated = row.TranscriptLocated,
+    resultSummary = row.ResultSummary, problem = row.Problem,
 };
 
 static int CountLines(string body) => body.Length == 0 ? 0 : body.Split('\n').Length - (body.EndsWith('\n') ? 1 : 0);

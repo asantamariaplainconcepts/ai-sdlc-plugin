@@ -47,48 +47,36 @@ public sealed class Store : IDisposable
         command.ExecuteNonQuery();
     }
 
+    /// Paired with the RunRow order they fill; nulls kept as absences.
+    private static readonly string[] RunColumns = ["session_id", "worktree_path", "step", "prompt", "starting_commit", "started_at", "finished_at", "exit_code", "is_error", "cost_usd", "num_turns", "duration_ms", "transcript_path", "transcript_located", "result_summary", "stderr_tail", "problem"];
+
     /// INSERT only: a second run on the same worktree is a second row, whatever happened. Cost
     /// absent stays NULL — null is not the same as free.
     public long RecordRun(RunRow row)
     {
-        using var command = this.connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO runs (session_id, worktree_path, step, prompt, starting_commit, started_at, finished_at,
-                exit_code, is_error, cost_usd, num_turns, duration_ms, transcript_path, transcript_located,
-                result_summary, stderr_tail, problem)
-            VALUES ($session, $worktree, $step, $prompt, $commit, $started, $finished,
-                $exit, $isError, $cost, $turns, $duration, $transcript, $transcriptLocated,
-                $summary, $stderr, $problem);
-            SELECT last_insert_rowid();
-            """;
-        foreach (var (name, value) in RunParameters(row))
+        var values = new object[]
         {
-            command.Parameters.AddWithValue(name, value);
+            row.SessionId, row.WorktreePath, row.Step ?? (object)DBNull.Value, row.Prompt ?? (object)DBNull.Value,
+            row.StartingCommit ?? (object)DBNull.Value, row.StartedAtIso, row.FinishedAtIso ?? (object)DBNull.Value,
+            row.ExitCode ?? (object)DBNull.Value, row.IsError is { } e ? (e ? 1 : 0) : DBNull.Value, row.CostUsd ?? (object)DBNull.Value,
+            row.NumTurns ?? (object)DBNull.Value, row.DurationMs ?? (object)DBNull.Value, row.TranscriptPath ?? (object)DBNull.Value,
+            row.TranscriptLocated ? 1 : 0, row.ResultSummary ?? (object)DBNull.Value, row.StderrTail ?? (object)DBNull.Value, row.Problem ?? (object)DBNull.Value,
+        };
+        using var command = this.connection.CreateCommand();
+        var columns = string.Join(", ", RunColumns);
+        var parameters = string.Join(", ", RunColumns.Select(c => $"${c}"));
+        command.CommandText = $"INSERT INTO runs ({columns}) VALUES ({parameters}); SELECT last_insert_rowid();";
+        for (var i = 0; i < values.Length; i++)
+        {
+            command.Parameters.AddWithValue($"${RunColumns[i]}", values[i]);
         }
 
         return (long)command.ExecuteScalar()!;
     }
 
-    private static IEnumerable<(string Name, object Value)> RunParameters(RunRow row)
-    {
-        yield return ("$session", row.SessionId);
-        yield return ("$worktree", row.WorktreePath);
-        yield return ("$step", (object?)row.Step ?? DBNull.Value);
-        yield return ("$prompt", (object?)row.Prompt ?? DBNull.Value);
-        yield return ("$commit", (object?)row.StartingCommit ?? DBNull.Value);
-        yield return ("$started", row.StartedAtIso);
-        yield return ("$finished", (object?)row.FinishedAtIso ?? DBNull.Value);
-        yield return ("$exit", (object?)row.ExitCode ?? DBNull.Value);
-        yield return ("$isError", row.IsError is { } isError ? (object)(isError ? 1 : 0) : DBNull.Value);
-        yield return ("$cost", (object?)row.CostUsd ?? DBNull.Value);
-        yield return ("$turns", (object?)row.NumTurns ?? DBNull.Value);
-        yield return ("$duration", (object?)row.DurationMs ?? DBNull.Value);
-        yield return ("$transcript", (object?)row.TranscriptPath ?? DBNull.Value);
-        yield return ("$transcriptLocated", row.TranscriptLocated ? 1 : 0);
-        yield return ("$summary", (object?)row.ResultSummary ?? DBNull.Value);
-        yield return ("$stderr", (object?)row.StderrTail ?? DBNull.Value);
-        yield return ("$problem", (object?)row.Problem ?? DBNull.Value);
-    }
+    // Listers for each column kind, paired with the SELECT's order; each null is an absence kept.
+    private static string? Text(Microsoft.Data.Sqlite.SqliteDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
+    private static int? Int(Microsoft.Data.Sqlite.SqliteDataReader r, int i) => r.IsDBNull(i) ? null : r.GetInt32(i);
 
     /// The worktree's runs, most recent first — the listing the run panel draws.
     public IReadOnlyList<RunRow> ListRuns(string worktreePath)
@@ -101,22 +89,11 @@ public sealed class Store : IDisposable
         while (reader.Read())
         {
             rows.Add(new RunRow(
-                reader.GetString(0), worktreePath,
-                reader.IsDBNull(1) ? null : reader.GetString(1),
-                null,
-                reader.IsDBNull(2) ? null : reader.GetString(2),
-                reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetString(4),
-                reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                reader.IsDBNull(6) ? null : reader.GetInt32(6) == 1,
-                reader.IsDBNull(7) ? null : reader.GetDecimal(7),
-                reader.IsDBNull(8) ? null : reader.GetInt32(8),
-                reader.IsDBNull(9) ? null : reader.GetDouble(9),
-                reader.IsDBNull(10) ? null : reader.GetString(10),
-                reader.GetInt32(11) == 1,
-                reader.IsDBNull(12) ? null : reader.GetString(12),
-                null,
-                null));
+                reader.GetString(0), worktreePath, Text(reader, 1), null, Text(reader, 2), reader.GetString(3),
+                Text(reader, 4), Int(reader, 5), Int(reader, 6) == 1 ? true : Int(reader, 6) is null ? null : false,
+                reader.IsDBNull(7) ? null : reader.GetDecimal(7), Int(reader, 8),
+                reader.IsDBNull(9) ? null : reader.GetDouble(9), Text(reader, 10), reader.GetInt32(11) == 1,
+                Text(reader, 12), null, null));
         }
 
         return rows;
@@ -141,8 +118,7 @@ public sealed class Store : IDisposable
     }
 }
 
-/// A run's record: what was launched, where it started from, how it ended. Nulls are absences,
-/// each named by whoever draws the row — cost null is "not given", exit null is "never ran".
+/// A run's record; every null is an absence — cost null is "not given", exit null is "never ran".
 public sealed record RunRow(
     string SessionId, string WorktreePath, string? Step, string? Prompt, string? StartingCommit,
     string StartedAtIso, string? FinishedAtIso, int? ExitCode, bool? IsError, decimal? CostUsd,
